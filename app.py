@@ -1102,7 +1102,7 @@ def main():
 
                 prompt = f"""És especialista em Meta Ads e afiliados Shopee.
 Analisa o período {d_ini} a {d_fim} em português do Brasil com emojis. Sê directa, prática, usa linguagem simples.
-A utilizadora é criadora de conteúdo afiliada — não usa termos muito técnicos.
+A utilizadora é criadora de conteúdo afiliada, não usa termos muito técnicos.
 
 Fornece SEMPRE:
 1. 📊 Diagnóstico (2 frases sobre o que está a acontecer)
