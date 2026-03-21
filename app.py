@@ -60,6 +60,25 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #f6e8d8 !important;
     }
+    /* Sidebar buttons */
+    [data-testid="stSidebar"] button {
+        background-color: #3a2c28 !important;
+        color: #f6e8d8 !important;
+        border: 1px solid #bd6d34 !important;
+    }
+    [data-testid="stSidebar"] button:hover {
+        background-color: #bd6d34 !important;
+        color: #f6e8d8 !important;
+    }
+    /* Expander filter bar */
+    [data-testid="stExpander"] {
+        background-color: #1a1210 !important;
+        border: 1px solid #3a2c28 !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stExpander"] summary {
+        color: #f6e8d8 !important;
+    }
     [data-testid="stSidebar"] .stMultiSelect > div,
     [data-testid="stSidebar"] .stDateInput > div,
     [data-testid="stSidebar"] input {
@@ -136,8 +155,16 @@ st.markdown("""
 PLOTLY_THEME = dict(
     plot_bgcolor="#0f0d0b",
     paper_bgcolor="#0f0d0b",
-    font_color="#c5936d",
+    font_color="#f6e8d8",
     title_font_color="#f6e8d8",
+    legend=dict(
+        font=dict(color="#f6e8d8", size=12),
+        bgcolor="rgba(30,18,16,0.8)",
+        bordercolor="#3a2c28",
+        borderwidth=1,
+    ),
+    xaxis=dict(color="#c5936d", gridcolor="#2a1f1a"),
+    yaxis=dict(color="#c5936d", gridcolor="#2a1f1a"),
 )
 
 # ─────────────────────────────────────────────
@@ -426,7 +453,9 @@ def main():
         (df_raw["Sub_id2"].isin(sid2_sel)) &
         (df_raw["Sub_id1"].isin(sid1_sel)) &
         (df_raw["Sub_id3"].isin(sid3_sel))
-    ]
+    ].copy()
+    # Remover apenas para visualização em gráficos (não afecta métricas)
+    df_viz = df[df["Sub_id2"].str.strip() != ""].copy()
     df_ant = semana_anterior(df_raw, d_ini, d_fim)
 
     if df.empty:
@@ -439,8 +468,6 @@ def main():
     df_pago = df[df["Sub_id2"].str.lower()=="pago"]
     df_org  = df[df["Sub_id2"].str.lower()=="organico"]
     df_story= df[df["Sub_id2"].str.lower()=="story"]
-    # Remover canal em branco dos gráficos
-    df = df[df["Sub_id2"].str.strip() != ""]
     m_pago  = calcular(df_pago)  if len(df_pago)  > 0 else None
     m_org   = calcular(df_org)   if len(df_org)   > 0 else None
     m_story = calcular(df_story) if len(df_story) > 0 else None
@@ -590,7 +617,7 @@ def main():
     st.markdown('<div class="section-title">📊 Comparação por Canal</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
-    df_canal = df.groupby("Sub_id2").agg(
+    df_canal = df_viz.groupby("Sub_id2").agg(
         Vendas=("Vendas","sum"),
         Comissao=("Comissao","sum"),
         Cliques=("Cliques","sum"),
