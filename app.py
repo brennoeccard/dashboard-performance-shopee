@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 import numpy as np
 from datetime import datetime, timedelta
 import io
+import requests
 
 # ─────────────────────────────────────────────
 #  CONFIG
@@ -226,11 +227,20 @@ def autenticar():
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def ler_dados():
+    import time
     service = autenticar()
-    resultado = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME}!A1:P",
-    ).execute()
+    for tentativa in range(3):
+        try:
+            resultado = service.spreadsheets().values().get(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"{SHEET_NAME}!A1:P",
+            ).execute()
+            break
+        except Exception as e:
+            if tentativa < 2:
+                time.sleep(2)
+                continue
+            raise e
     valores = resultado.get("values", [])
     if len(valores) < 2:
         return pd.DataFrame()
