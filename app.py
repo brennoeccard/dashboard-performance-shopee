@@ -501,7 +501,8 @@ def main():
     with r1c4:
         roi_val = m["roi"]
         cor_roi = "green" if roi_val>1 else ("yellow" if roi_val>=0 else "red")
-        card("ROI", "{:.2f}".format(roi_val), cor_roi, "",
+        card("ROI", "{:.2f}".format(roi_val), cor_roi,
+             delta_html(roi_val, m_ant_v.get("roi",0)),
              sparkline(df_daily,"ROI_calc","#d4a017"))
 
     # Linha 2 — Performance
@@ -515,11 +516,13 @@ def main():
              delta_html(m["vendas"], m_ant_v.get("vendas",0)),
              sparkline(df_daily,"Vendas","#9c5834"))
     with r2c3:
-        card("CTR Shopee", fmt_pct(m["ctr_shopee"]), "blue", "",
+        card("CTR Shopee", fmt_pct(m["ctr_shopee"]), "blue",
+             delta_html(m["ctr_shopee"], m_ant_v.get("ctr_shopee",0)),
              sparkline(df_daily,"CTR_calc","#bd6d34"))
     with r2c4:
         card("Ticket Medio", fmt_brl(m["ticket_medio"]), "orange",
-             delta_html(m["ticket_medio"], m_ant_v.get("ticket_medio",0)))
+             delta_html(m["ticket_medio"], m_ant_v.get("ticket_medio",0)),
+             sparkline(df_daily,"Ticket_Medio","#bd6d34"))
 
     # ── KPIs POR CANAL ──
     st.markdown('<div class="section-title">📂 Performance por Canal</div>', unsafe_allow_html=True)
@@ -581,18 +584,19 @@ def main():
         lucro_camp = m_pago["comissao"] - m_pago["invest"]
         roi_camp = (m_pago["comissao"]-m_pago["invest"])/m_pago["invest"] if m_pago["invest"]>0 else 0
         cor_roi = "green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
+        mp_ant = m_ant_pago if m_ant_pago else {}
         k1,k2,k3,k4,k5 = st.columns(5)
-        with k1: card("Vendas Pago",    fmt_num(m_pago["vendas"]),         "purple")
-        with k2: card("Comissao Pago",  fmt_brl(m_pago["comissao"]),       "blue")
-        with k3: card("Ticket Medio",   fmt_brl(m_pago["ticket_medio"]),   "orange")
-        with k4: card("Investimento",   fmt_brl(m_pago["invest"]),         "red")
-        with k5: card("Lucro Campanha", fmt_brl(lucro_camp), cor_roi)
+        with k1: card("Vendas Pago",    fmt_num(m_pago["vendas"]),       "purple",  delta_html(m_pago["vendas"],       mp_ant.get("vendas",0)))
+        with k2: card("Comissao Pago",  fmt_brl(m_pago["comissao"]),     "blue",    delta_html(m_pago["comissao"],     mp_ant.get("comissao",0)))
+        with k3: card("Ticket Medio",   fmt_brl(m_pago["ticket_medio"]), "orange",  delta_html(m_pago["ticket_medio"], mp_ant.get("ticket_medio",0)))
+        with k4: card("Investimento",   fmt_brl(m_pago["invest"]),       "red",     delta_html(m_pago["invest"],       mp_ant.get("invest",0)))
+        with k5: card("Lucro Campanha", fmt_brl(lucro_camp),              cor_roi,   delta_html(lucro_camp,             mp_ant.get("lucro_camp",0)))
         k6,k7,k8,k9,k10 = st.columns(5)
-        with k6:  card("CPM Impressoes", fmt_brl(m_pago["cpm_imp"]),  "yellow")
-        with k7:  card("CPM Alcance",    fmt_brl(m_pago["cpm_alc"]),  "yellow")
-        with k8:  card("CPC",            fmt_brl(m_pago["cpc"]),      "blue")
-        with k9:  card("CAC",            fmt_brl(m_pago["cac"]),      "purple")
-        with k10: card("Frequencia",     "{:.2f}x".format(m_pago["freq"]), "orange")
+        with k6:  card("CPM Impressoes", fmt_brl(m_pago["cpm_imp"]), "yellow", delta_html(m_pago["cpm_imp"], mp_ant.get("cpm_imp",0)))
+        with k7:  card("CPM Alcance",    fmt_brl(m_pago["cpm_alc"]), "yellow", delta_html(m_pago["cpm_alc"], mp_ant.get("cpm_alc",0)))
+        with k8:  card("CPC",            fmt_brl(m_pago["cpc"]),     "blue",   delta_html(m_pago["cpc"],     mp_ant.get("cpc",0)))
+        with k9:  card("CAC",            fmt_brl(m_pago["cac"]),     "purple", delta_html(m_pago["cac"],     mp_ant.get("cac",0)))
+        with k10: card("Frequencia",     "{:.2f}x".format(m_pago["freq"]), "orange", delta_html(m_pago["freq"], mp_ant.get("freq",0)))
 
     st.markdown("---")
 
