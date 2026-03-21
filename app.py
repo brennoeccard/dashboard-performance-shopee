@@ -327,14 +327,7 @@ def main():
         return
 
     with st.sidebar:
-        st.markdown("### 👤 {}".format(st.session_state.get("usuario","")))
-        if st.button("🔄 Actualizar dados", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-        if st.button("🚪 Sair", use_container_width=True):
-            st.session_state.logged_in = False
-            st.rerun()
-        st.markdown("---")
+        # Atalhos no topo
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">ATALHOS</div>', unsafe_allow_html=True)
         st.markdown("""
         <a href="#evolucao" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📈 Evolucao Temporal</a>
@@ -342,8 +335,18 @@ def main():
         <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🏆 Itens Campeoes</a>
         <a href="#funil" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔽 Funil de Conversao</a>
         <a href="#metricas-pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📉 Metricas Pago</a>
-        <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;text-align:center;">🤖 Insights IA</a>
+        <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;margin-bottom:4px;text-align:center;">🤖 Insights IA</a>
         """, unsafe_allow_html=True)
+        # Utilizador e acções em baixo
+        st.markdown("---")
+        st.markdown('<div style="color:#c5936d;font-size:11px;">👤 {}</div>'.format(
+            st.session_state.get("usuario","")), unsafe_allow_html=True)
+        if st.button("🔄 Actualizar dados", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        if st.button("🚪 Sair", use_container_width=True):
+            st.session_state.logged_in = False
+            st.rerun()
 
     st.markdown("""
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;">
@@ -679,6 +682,16 @@ def main():
         df_pago_all = df_raw[df_raw["Sub_id2"].str.lower()=="pago"]
         m_pago_all  = calcular(df_pago_all) if not df_pago_all.empty else None
 
+        # Selectbox ANTES das colunas para estar disponivel em ambas
+        ctr_selecionado = st.selectbox("Destacar no funil:", [
+            "Nenhum",
+            "Imp -> Alcance",
+            "Alcance -> Cliques",
+            "Cliques -> Vendas",
+            "Imp -> Cliques (global)",
+            "Imp -> Vendas (global)",
+        ], label_visibility="collapsed")
+
         col_funil, col_steps = st.columns([1.2, 1])
         with col_funil:
             fl = ["Vendas","Cliques Meta","Alcance","Impressoes"]
@@ -717,16 +730,6 @@ def main():
 
         with col_steps:
             st.markdown('<div style="color:#c5936d;font-size:10px;margin-bottom:6px;"><b style="color:#f6e8d8;">Ant</b>=step a step | <b style="color:#f6e8d8;">Ini</b>=vs Impressoes | <b style="color:#bd6d34;">Delta</b>=vs semana ant.</div>', unsafe_allow_html=True)
-
-            # Selectbox para highlight no funil
-            ctr_selecionado = st.selectbox("Destacar no funil:", [
-                "Nenhum",
-                "Imp -> Alcance",
-                "Alcance -> Cliques",
-                "Cliques -> Vendas",
-                "Imp -> Cliques (global)",
-                "Imp -> Vendas (global)",
-            ], label_visibility="collapsed")
 
             cards_f = [
                 ("Ant: Imp->Alc", "Frequencia de alcance. Ideal > 60%. Baixo = audiencia muito restrita.",
