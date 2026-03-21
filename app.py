@@ -113,6 +113,19 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     border: 1px solid #3a2c28 !important;
     border-radius: 8px !important;
 }
+[data-testid="stExpander"] summary {
+    color: #c5936d !important;
+    font-size: 13px !important;
+}
+input[type="text"], [data-testid="stDateInput"] input {
+    background-color: #1a1210 !important;
+    color: #f6e8d8 !important;
+    border-color: #3a2c28 !important;
+    font-size: 12px !important;
+}
+[data-testid="stDateInput"] {
+    background-color: #1a1210 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -229,12 +242,14 @@ def fmt_num(val):
     return "{:,}".format(int(val)).replace(",",".")
 
 def card(label, value, color="blue", delta_html_str="", sparkline_fig=None):
-    st.markdown("""<div class="metric-card {color}">
-        <div class="metric-label">{label}</div>
-        <div class="metric-value">{value}</div>
-        {delta}
-    </div>""".format(color=color, label=label, value=value, delta=delta_html_str),
-    unsafe_allow_html=True)
+    html = (
+        '<div class="metric-card ' + color + '">'
+        '<div class="metric-label">' + label + '</div>'
+        '<div class="metric-value">' + str(value) + '</div>'
+        + (delta_html_str if delta_html_str else "") +
+        '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
     if sparkline_fig:
         st.plotly_chart(sparkline_fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -322,15 +337,12 @@ def main():
         st.markdown("---")
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">ATALHOS</div>', unsafe_allow_html=True)
         st.markdown("""
-        <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;
-           background:#2a1f1a;padding:8px 12px;border-radius:8px;border:1px solid #bd6d34;
-           margin-bottom:6px;text-align:center;">🤖 Insights IA</a>
-        <a href="#funil" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;
-           background:#1a1210;padding:8px 12px;border-radius:8px;border:1px solid #3a2c28;
-           margin-bottom:6px;text-align:center;">🔽 Funil</a>
-        <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;
-           background:#1a1210;padding:8px 12px;border-radius:8px;border:1px solid #3a2c28;
-           text-align:center;">🏆 Itens Campeoes</a>
+        <a href="#evolucao" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📈 Evolucao Temporal</a>
+        <a href="#canais" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📊 Comparacao Canais</a>
+        <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🏆 Itens Campeoes</a>
+        <a href="#funil" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔽 Funil de Conversao</a>
+        <a href="#metricas-pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📉 Metricas Pago</a>
+        <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;text-align:center;">🤖 Insights IA</a>
         """, unsafe_allow_html=True)
 
     st.markdown("""
@@ -344,15 +356,15 @@ def main():
 
     # Anchor bar
     st.markdown("""
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;padding:8px 16px;
-                background:#1a1210;border-radius:8px;border:1px solid #3a2c28;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;
+                padding:8px 16px;background:#1a1210;border-radius:8px;border:1px solid #3a2c28;">
         <span style="color:#c5936d;font-size:11px;font-weight:600;">IR PARA:</span>
-        <a href="#insights-ia" style="color:#bd6d34;font-size:12px;text-decoration:none;
-           background:#2a1f1a;padding:4px 12px;border-radius:20px;border:1px solid #bd6d34;">🤖 Insights IA</a>
-        <a href="#funil" style="color:#c5936d;font-size:12px;text-decoration:none;
-           background:#1a1210;padding:4px 12px;border-radius:20px;border:1px solid #3a2c28;">🔽 Funil</a>
-        <a href="#campeoes" style="color:#c5936d;font-size:12px;text-decoration:none;
-           background:#1a1210;padding:4px 12px;border-radius:20px;border:1px solid #3a2c28;">🏆 Campeoes</a>
+        <a href="#evolucao" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📈 Evolucao</a>
+        <a href="#canais" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📊 Canais</a>
+        <a href="#campeoes" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🏆 Campeoes</a>
+        <a href="#funil" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🔽 Funil</a>
+        <a href="#metricas-pago" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📉 Metricas Pago</a>
+        <a href="#insights-ia" style="color:#bd6d34;font-size:11px;text-decoration:none;background:#2a1f1a;padding:3px 10px;border-radius:20px;border:1px solid #bd6d34;">🤖 Insights IA</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -560,7 +572,7 @@ def main():
     st.markdown("---")
 
     # ── EVOLUCAO TEMPORAL ──
-    st.markdown('<div class="section-title">📈 Evolucao Temporal</div>', unsafe_allow_html=True)
+    st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>', unsafe_allow_html=True)
     metricas_disp = {"Comissao":"Comissao","Vendas":"Vendas","Cliques Shopee":"Cliques","Investimento":"Investimento"}
     col_sel = st.multiselect("Metricas para cruzar", list(metricas_disp.keys()), default=["Comissao","Vendas"])
     if col_sel:
@@ -578,7 +590,7 @@ def main():
         st.plotly_chart(fig_linha, use_container_width=True)
 
     # ── COMPARACAO POR CANAL ──
-    st.markdown('<div class="section-title">📊 Comparacao por Canal</div>', unsafe_allow_html=True)
+    st.markdown('<div id="canais" class="section-title">📊 Comparacao por Canal</div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     df_canal = df_viz.groupby("Sub_id2").agg(Vendas=("Vendas","sum"), Comissao=("Comissao","sum"), Cliques=("Cliques","sum")).reset_index()
     with col1:
@@ -674,65 +686,93 @@ def main():
             fp = [m_pago["vendas"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
                   m_pago["cliques_meta"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
                   m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0, 100]
-            cores_f = ["#d2b095","#c5936d","#9c5834","#bd6d34"]
+            # Map selected CTR to highlighted bars
+            highlight_map = {
+                "Imp -> Alcance":         ["Impressoes","Alcance"],
+                "Alcance -> Cliques":     ["Alcance","Cliques Meta"],
+                "Cliques -> Vendas":      ["Cliques Meta","Vendas"],
+                "Imp -> Cliques (global)":["Impressoes","Cliques Meta"],
+                "Imp -> Vendas (global)": ["Impressoes","Vendas"],
+            }
+            highlighted = highlight_map.get(ctr_selecionado, [])
+            cores_base = {"Impressoes":"#bd6d34","Alcance":"#9c5834","Cliques Meta":"#c5936d","Vendas":"#d2b095"}
+            cores_hl   = {"Impressoes":"#f6e8d8","Alcance":"#f6e8d8","Cliques Meta":"#f6e8d8","Vendas":"#f6e8d8"}
+
             fig_f = go.Figure()
             for i,(l,v,p) in enumerate(zip(fl,fv,fp)):
-                fig_f.add_trace(go.Bar(x=[p], y=[l], orientation="h", marker_color=cores_f[i],
+                cor = cores_hl[l] if l in highlighted else cores_base[l]
+                lw  = 3 if l in highlighted else 0
+                fig_f.add_trace(go.Bar(x=[p], y=[l], orientation="h",
+                    marker_color=cor, marker_line_color="#ffffff", marker_line_width=lw,
                     text="{:,.0f}  ({:.2f}%)".format(v,p), textposition="inside",
                     name=l, showlegend=False))
             fig_f.update_layout(title="Funil - % do total de impressoes",
-                                barmode="overlay", **PLOTLY_THEME, height=260,
+                                barmode="overlay", **PLOTLY_THEME, height=240,
                                 margin=dict(l=0,r=0,t=40,b=0))
             st.plotly_chart(fig_f, use_container_width=True)
+            # Legenda abaixo
+            st.markdown('<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:-8px;">' +
+                "".join(['<span style="font-size:10px;color:#c5936d;"><span style="color:{};font-size:14px;">■</span> {}</span>'.format(cores_base[k],k) for k in cores_base]) +
+                '</div>', unsafe_allow_html=True)
 
         with col_steps:
-            st.markdown("""<div style="color:#c5936d;font-size:11px;margin-bottom:8px;">
-            <b style="color:#f6e8d8;">CTR Anterior</b> = conversao entre steps consecutivos<br>
-            <b style="color:#f6e8d8;">CTR Inicial</b> = sempre vs Impressoes<br>
-            <b style="color:#bd6d34;">Delta</b> = variacao vs semana anterior
-            </div>""", unsafe_allow_html=True)
+            st.markdown('<div style="color:#c5936d;font-size:10px;margin-bottom:6px;"><b style="color:#f6e8d8;">Ant</b>=step a step | <b style="color:#f6e8d8;">Ini</b>=vs Impressoes | <b style="color:#bd6d34;">Delta</b>=vs semana ant.</div>', unsafe_allow_html=True)
+
+            # Selectbox para highlight no funil
+            ctr_selecionado = st.selectbox("Destacar no funil:", [
+                "Nenhum",
+                "Imp -> Alcance",
+                "Alcance -> Cliques",
+                "Cliques -> Vendas",
+                "Imp -> Cliques (global)",
+                "Imp -> Vendas (global)",
+            ], label_visibility="collapsed")
 
             cards_f = [
-                ("CTR Ant: Imp -> Alcance", "Frequencia de alcance - ideal > 60%",
-                 "alcance","impressoes", None, None),
-                ("CTR Ant: Alcance -> Cliques", "Relevancia do criativo - ideal > 1%",
-                 "cliques_meta","alcance", None, None),
-                ("CTR Ant: Cliques -> Vendas", "Taxa de conversao final - quanto maior melhor",
-                 "vendas","cliques_meta", None, None),
-                ("CTR Ini: Imp -> Cliques", "Eficiencia global do criativo",
-                 "cliques_meta","impressoes", "cliques_meta","impressoes"),
-                ("CTR Ini: Imp -> Vendas", "CTR global - o mais importante do funil",
-                 "vendas","impressoes", "vendas","impressoes"),
+                ("Ant: Imp->Alc", "Frequencia de alcance. Ideal > 60%. Baixo = audiencia muito restrita.",
+                 "alcance","impressoes", None, None, "Imp -> Alcance"),
+                ("Ant: Alc->Clq", "CTR do criativo. Ideal > 1%. Baixo = criativo fraco ou saturado.",
+                 "cliques_meta","alcance", None, None, "Alcance -> Cliques"),
+                ("Ant: Clq->Vnd", "Taxa de conversao. Baixo = problema na pagina do produto ou preco.",
+                 "vendas","cliques_meta", None, None, "Cliques -> Vendas"),
+                ("Ini: Imp->Clq", "Eficiencia global do criativo vs total de impressoes.",
+                 "cliques_meta","impressoes", "cliques_meta","impressoes", "Imp -> Cliques (global)"),
+                ("Ini: Imp->Vnd", "O mais importante: de tudo que viram, quantos compraram.",
+                 "vendas","impressoes", "vendas","impressoes", "Imp -> Vendas (global)"),
             ]
 
-            for titulo, dica, num, den, num_ini, den_ini in cards_f:
+            for titulo, dica, num, den, num_ini, den_ini, key_sel in cards_f:
                 cur = m_pago[num]/m_pago[den]*100 if m_pago[den]>0 else 0
-                ant_val = (m_ant_pago[num]/m_ant_pago[den]*100
-                           if m_ant_pago and m_ant_pago[den]>0 else None)
-                ini_val = (m_pago_all[num_ini]/m_pago_all[den_ini]*100
-                           if num_ini and m_pago_all and m_pago_all[den_ini]>0 else None)
+                ant_val = (m_ant_pago[num]/m_ant_pago[den]*100 if m_ant_pago and m_ant_pago[den]>0 else None)
+                ini_val = (m_pago_all[num_ini]/m_pago_all[den_ini]*100 if num_ini and m_pago_all and m_pago_all[den_ini]>0 else None)
+                is_selected = ctr_selecionado == key_sel
+                border_extra = "border:2px solid #f6e8d8 !important;" if is_selected else ""
 
                 parts = []
                 if ant_val is not None:
                     diff = cur - ant_val
                     sinal = "+" if diff>0 else ""
                     cor = "#7a9e4e" if diff>0 else "#c0392b"
-                    emoji_t = "📈" if diff>0 else "📉"
-                    parts.append('<span style="color:{};font-size:10px;">{} {}{}pp vs ant.({:.3f}%)</span>'.format(cor,emoji_t,sinal,round(diff,3),ant_val))
+                    arr = "▲" if diff>0 else "▼"
+                    parts.append('<span style="color:{};font-size:9px;">{} {}{}pp vs ant({:.3f}%)</span>'.format(cor,arr,sinal,round(diff,3),ant_val))
                 if ini_val is not None:
-                    parts.append('<span style="color:#c5936d;font-size:10px;">📌 Hist: {:.3f}%</span>'.format(ini_val))
-                delta_str = "<br>".join(parts) if parts else '<span style="color:#c5936d;font-size:10px;">sem referencia</span>'
+                    parts.append('<span style="color:#c5936d;font-size:9px;">Hist:{:.3f}%</span>'.format(ini_val))
+                delta_str = " | ".join(parts) if parts else '<span style="color:#c5936d;font-size:9px;">sem ref.</span>'
 
-                st.markdown("""<div class="metric-card" style="margin-bottom:5px;" title="{dica}">
-                    <div class="metric-label" style="font-size:9px;">{titulo}</div>
-                    <div class="metric-value" style="font-size:16px;">{cur:.3f}%</div>
-                    {delta}
-                </div>""".format(dica=dica, titulo=titulo, cur=cur, delta=delta_str),
-                unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="metric-card" style="margin-bottom:3px;padding:8px 12px;{border}" title="{dica}">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    '<div class="metric-label" style="font-size:9px;">{titulo}</div>'
+                    '<div class="metric-value" style="font-size:14px;margin:0;">{cur:.3f}%</div>'
+                    '</div>'
+                    '<div style="margin-top:2px;">{delta}</div>'
+                    '</div>'.format(border=border_extra, dica=dica, titulo=titulo, cur=cur, delta=delta_str),
+                    unsafe_allow_html=True
+                )
 
     # ── EVOLUCAO METRICAS PAGO ──
     if len(df_pago) > 0:
-        st.markdown('<div class="section-title">📉 Evolucao Metricas Pago</div>', unsafe_allow_html=True)
+        st.markdown('<div id="metricas-pago" class="section-title">📉 Evolucao Metricas Pago</div>', unsafe_allow_html=True)
         df_pd = df_pago.groupby("Data").agg(
             Investimento=("Investimento","sum"), Impressoes=("Impressoes","sum"),
             Alcance=("Alcance","sum"), Cliques_Meta=("Cliques_Meta","sum"), Vendas=("Vendas","sum")
