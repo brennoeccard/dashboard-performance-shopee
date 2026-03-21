@@ -1080,7 +1080,7 @@ def main():
         </div>
     </div>
     <div style="color:#c5936d; font-size:11px; margin-bottom:12px;">
-        💰 Cada análise consome ~$0.01 de créditos Anthropic. Usa quando precisares de insights actualizados.
+        Cada análise consome ~$0.01 de créditos Anthropic. Usa quando precisares de insights actualizados.
     </div>
     """, unsafe_allow_html=True)
 
