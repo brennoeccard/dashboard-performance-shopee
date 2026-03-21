@@ -843,45 +843,13 @@ def main():
         fig_pago.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig_pago, use_container_width=True)
 
-    # ── TABELA ──
-    st.markdown('<div class="section-title">📋 Dados Detalhados</div>', unsafe_allow_html=True)
-    cols_t = ["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","Comissao","Investimento"]
-    df_t = df[cols_t].copy()
-    df_t["Data"] = df_t["Data"].dt.strftime("%Y-%m-%d")
-    df_t = df_t.sort_values("Comissao", ascending=False).reset_index(drop=True)
-    busca = st.text_input("🔍 Pesquisar", placeholder="Ex: pago, 260302fronha...")
-    if busca:
-        df_t = df_t[df_t.apply(lambda r: busca.lower() in str(r).lower(), axis=1)]
-    st.dataframe(df_t.style.format({"Comissao":"R$ {:.2f}","Investimento":"R$ {:.2f}"}),
-                 use_container_width=True, height=400)
-    st.caption("{} linhas".format(len(df_t)))
-
-    # ── DOWNLOAD ──
-    html_report = """<html><head><style>
-    body{{font-family:Arial;padding:20px;color:#333;}}
-    h1{{color:#562d1d;}} table{{width:100%;border-collapse:collapse;}}
-    th{{background:#562d1d;color:white;padding:8px;}} td{{padding:6px;border-bottom:1px solid #eee;}}
-    </style></head><body>
-    <h1>Relatorio de Performance - Destrava</h1>
-    <p>Periodo: {} a {}</p>
-    <p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Vendas: {}</p>
-    {}
-    </body></html>""".format(d_ini, d_fim, fmt_brl(m["comissao"]), fmt_brl(m["lucro_total"]),
-                             m["roi"], fmt_num(m["vendas"]), df_t.to_html(index=False))
-    st.download_button("📥 Download Relatorio HTML",
-                       data=html_report.encode("utf-8"),
-                       file_name="relatorio_{}_{}.html".format(d_ini, d_fim),
-                       mime="text/html")
-
-    # ── INSIGHTS IA ──
     # ── IPA — INDICE DE POTENCIAL DE ANUNCIO ──
     st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
         <div style="color:#c5936d;font-size:12px;line-height:1.6;">
-            O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo (Meta Ads -> Shopee).<br>
-            <b style="color:#bd6d34;">Formula:</b> Comissao×0.40 + Vendas×0.25 + Ticket Medio×0.25 + CTR×0.10 (normalizados 0-100)<br>
-            <b style="color:#c0392b;">N/A</b> = menos de 3 vendas — sinal insuficiente para recomendar investimento.
+            O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo (Meta Ads).<br>
+            Score de 0 a 100. <b style="color:#c0392b;">N/A</b> = volume insuficiente para recomendar investimento.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -955,6 +923,38 @@ def main():
     st.dataframe(df_ipa_table, use_container_width=True, height=300)
 
     
+    # ── TABELA ──
+    st.markdown('<div class="section-title">📋 Dados Detalhados</div>', unsafe_allow_html=True)
+    cols_t = ["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","Comissao","Investimento"]
+    df_t = df[cols_t].copy()
+    df_t["Data"] = df_t["Data"].dt.strftime("%Y-%m-%d")
+    df_t = df_t.sort_values("Comissao", ascending=False).reset_index(drop=True)
+    busca = st.text_input("🔍 Pesquisar", placeholder="Ex: pago, 260302fronha...")
+    if busca:
+        df_t = df_t[df_t.apply(lambda r: busca.lower() in str(r).lower(), axis=1)]
+    st.dataframe(df_t.style.format({"Comissao":"R$ {:.2f}","Investimento":"R$ {:.2f}"}),
+                 use_container_width=True, height=400)
+    st.caption("{} linhas".format(len(df_t)))
+
+    # ── DOWNLOAD ──
+    html_report = """<html><head><style>
+    body{{font-family:Arial;padding:20px;color:#333;}}
+    h1{{color:#562d1d;}} table{{width:100%;border-collapse:collapse;}}
+    th{{background:#562d1d;color:white;padding:8px;}} td{{padding:6px;border-bottom:1px solid #eee;}}
+    </style></head><body>
+    <h1>Relatorio de Performance - Destrava</h1>
+    <p>Periodo: {} a {}</p>
+    <p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Vendas: {}</p>
+    {}
+    </body></html>""".format(d_ini, d_fim, fmt_brl(m["comissao"]), fmt_brl(m["lucro_total"]),
+                             m["roi"], fmt_num(m["vendas"]), df_t.to_html(index=False))
+    st.download_button("📥 Download Relatorio HTML",
+                       data=html_report.encode("utf-8"),
+                       file_name="relatorio_{}_{}.html".format(d_ini, d_fim),
+                       mime="text/html")
+
+    # ── INSIGHTS IA ──
+
     st.markdown('<div id="insights-ia" class="section-title">🤖 DESTRAVA AI - Insights & Recomendacoes</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
