@@ -1060,7 +1060,7 @@ def main():
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
         <div style="background:#1a1210; border:1px solid #bd6d34; border-radius:10px; padding:16px;">
             <div style="color:#bd6d34; font-size:13px; font-weight:700; margin-bottom:6px;">
-                🎯 Análise da Campanha Paga
+                Análise da Campanha Paga
             </div>
             <div style="color:#c5936d; font-size:12px; line-height:1.5;">
                 Analisa CPM, CPC, CAC, frequência e funil de conversão.<br>
