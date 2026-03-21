@@ -479,7 +479,7 @@ def main():
 
     # ── KPIs GERAIS ──
     st.markdown('<div class="section-title">💰 KPIs Gerais</div>', unsafe_allow_html=True)
-    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
     m_ant_v = m_ant if m_ant else {}
     with c1:
         card("Comissao Total", fmt_brl(m["comissao"]), "blue",
@@ -496,14 +496,18 @@ def main():
         card("ROI", "{:.2f}".format(roi_val), cor_roi, "",
              sparkline(df_daily,"ROI_calc","#d4a017"))
     with c4:
+        card("Investimento", fmt_brl(m["invest"]), "red",
+             delta_html(m["invest"], m_ant_v.get("invest",0)),
+             sparkline(df_daily,"Investimento","#c0392b"))
+    with c5:
         card("Vendas", fmt_num(m["vendas"]), "purple",
              delta_html(m["vendas"], m_ant_v.get("vendas",0)),
              sparkline(df_daily,"Vendas","#9c5834"))
-    with c5:
+    with c6:
         card("Cliques Shopee", fmt_num(m["cliques"]), "yellow",
              delta_html(m["cliques"], m_ant_v.get("cliques",0)),
              sparkline(df_daily,"Cliques","#d2b095"))
-    with c6:
+    with c7:
         card("CTR Shopee", fmt_pct(m["ctr_shopee"]), "blue", "",
              sparkline(df_daily,"CTR_calc","#bd6d34"))
 
