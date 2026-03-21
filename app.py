@@ -272,11 +272,13 @@ def calcular(df):
     cpm_alc = (invest / alcance * 1000) if alcance > 0 else 0
     cpc = invest / cliques_meta if cliques_meta > 0 else 0
     cac = invest / vendas if vendas > 0 else 0
+    ticket_medio = comissao / vendas if vendas > 0 else 0
     return dict(cliques=cliques, vendas=vendas, comissao=comissao, invest=invest,
                 impressoes=impressoes, alcance=alcance, cliques_meta=cliques_meta,
                 lucro_total=lucro_total, lucro_camp=lucro_camp, roi=roi,
                 ctr_shopee=ctr_shopee, ctr_meta=ctr_meta, ctr_cv=ctr_cv,
-                freq=freq, cpm_imp=cpm_imp, cpm_alc=cpm_alc, cpc=cpc, cac=cac)
+                freq=freq, cpm_imp=cpm_imp, cpm_alc=cpm_alc, cpc=cpc, cac=cac,
+                ticket_medio=ticket_medio)
 
 def sparkline(df_d, col, color="#bd6d34"):
     df14 = df_d.tail(14)
@@ -479,37 +481,45 @@ def main():
 
     # ── KPIs GERAIS ──
     st.markdown('<div class="section-title">💰 KPIs Gerais</div>', unsafe_allow_html=True)
-    c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
     m_ant_v = m_ant if m_ant else {}
-    with c1:
+
+    # Linha 1 — Financeiro
+    r1c1,r1c2,r1c3,r1c4 = st.columns(4)
+    with r1c1:
         card("Comissao Total", fmt_brl(m["comissao"]), "blue",
              delta_html(m["comissao"], m_ant_v.get("comissao",0)),
              sparkline(df_daily,"Comissao","#bd6d34"))
-    with c2:
+    with r1c2:
         cor = "green" if m["lucro_total"]>=0 else "red"
         card("Lucro Total", fmt_brl(m["lucro_total"]), cor,
              delta_html(m["lucro_total"], m_ant_v.get("lucro_total",0)),
              sparkline(df_daily,"Comissao","#9c5834"))
-    with c3:
+    with r1c3:
+        card("Investimento", fmt_brl(m["invest"]), "red",
+             delta_html(m["invest"], m_ant_v.get("invest",0)),
+             sparkline(df_daily,"Investimento","#c0392b"))
+    with r1c4:
         roi_val = m["roi"]
         cor_roi = "green" if roi_val>1 else ("yellow" if roi_val>=0 else "red")
         card("ROI", "{:.2f}".format(roi_val), cor_roi, "",
              sparkline(df_daily,"ROI_calc","#d4a017"))
-    with c4:
-        card("Investimento", fmt_brl(m["invest"]), "red",
-             delta_html(m["invest"], m_ant_v.get("invest",0)),
-             sparkline(df_daily,"Investimento","#c0392b"))
-    with c5:
-        card("Vendas", fmt_num(m["vendas"]), "purple",
-             delta_html(m["vendas"], m_ant_v.get("vendas",0)),
-             sparkline(df_daily,"Vendas","#9c5834"))
-    with c6:
+
+    # Linha 2 — Performance
+    r2c1,r2c2,r2c3,r2c4 = st.columns(4)
+    with r2c1:
         card("Cliques Shopee", fmt_num(m["cliques"]), "yellow",
              delta_html(m["cliques"], m_ant_v.get("cliques",0)),
              sparkline(df_daily,"Cliques","#d2b095"))
-    with c7:
+    with r2c2:
+        card("Vendas", fmt_num(m["vendas"]), "purple",
+             delta_html(m["vendas"], m_ant_v.get("vendas",0)),
+             sparkline(df_daily,"Vendas","#9c5834"))
+    with r2c3:
         card("CTR Shopee", fmt_pct(m["ctr_shopee"]), "blue", "",
              sparkline(df_daily,"CTR_calc","#bd6d34"))
+    with r2c4:
+        card("Ticket Medio", fmt_brl(m["ticket_medio"]), "orange",
+             delta_html(m["ticket_medio"], m_ant_v.get("ticket_medio",0)))
 
     # ── KPIs POR CANAL ──
     st.markdown('<div class="section-title">📂 Performance por Canal</div>', unsafe_allow_html=True)
@@ -537,12 +547,15 @@ def main():
                              <div class="canal-value">{cl}</div></div>
                         <div><div class="canal-metric">CTR</div>
                              <div class="canal-value">{ctr}</div></div>
+                        <div><div class="canal-metric">Ticket Medio</div>
+                             <div class="canal-value">{tm}</div></div>
                     </div>
                 </div>""".format(
                     emoji=emoji, nome=nome,
                     v=fmt_num(mc["vendas"]), tv=trend(mc["vendas"], a.get("vendas",0)),
                     c=fmt_brl(mc["comissao"]), tc=trend(mc["comissao"], a.get("comissao",0)),
-                    cl=fmt_num(mc["cliques"]), ctr=fmt_pct(mc["ctr_shopee"])
+                    cl=fmt_num(mc["cliques"]), ctr=fmt_pct(mc["ctr_shopee"]),
+                    tm=fmt_brl(mc["ticket_medio"])
                 ), unsafe_allow_html=True)
             else:
                 st.markdown("""
@@ -568,23 +581,27 @@ def main():
         lucro_camp = m_pago["comissao"] - m_pago["invest"]
         roi_camp = (m_pago["comissao"]-m_pago["invest"])/m_pago["invest"] if m_pago["invest"]>0 else 0
         cor_roi = "green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
-        k1,k2,k3,k4 = st.columns(4)
-        with k1: card("Vendas Pago",    fmt_num(m_pago["vendas"]),   "purple")
-        with k2: card("Comissao Pago",  fmt_brl(m_pago["comissao"]), "blue")
-        with k3: card("Investimento",   fmt_brl(m_pago["invest"]),   "red")
-        with k4: card("Lucro Campanha", fmt_brl(lucro_camp), cor_roi)
-        k5,k6,k7,k8,k9 = st.columns(5)
-        with k5: card("CPM Impressoes", fmt_brl(m_pago["cpm_imp"]),  "yellow")
-        with k6: card("CPM Alcance",    fmt_brl(m_pago["cpm_alc"]),  "yellow")
-        with k7: card("CPC",            fmt_brl(m_pago["cpc"]),      "blue")
-        with k8: card("CAC",            fmt_brl(m_pago["cac"]),      "purple")
-        with k9: card("Frequencia",     "{:.2f}x".format(m_pago["freq"]), "orange")
+        k1,k2,k3,k4,k5 = st.columns(5)
+        with k1: card("Vendas Pago",    fmt_num(m_pago["vendas"]),         "purple")
+        with k2: card("Comissao Pago",  fmt_brl(m_pago["comissao"]),       "blue")
+        with k3: card("Ticket Medio",   fmt_brl(m_pago["ticket_medio"]),   "orange")
+        with k4: card("Investimento",   fmt_brl(m_pago["invest"]),         "red")
+        with k5: card("Lucro Campanha", fmt_brl(lucro_camp), cor_roi)
+        k6,k7,k8,k9,k10 = st.columns(5)
+        with k6:  card("CPM Impressoes", fmt_brl(m_pago["cpm_imp"]),  "yellow")
+        with k7:  card("CPM Alcance",    fmt_brl(m_pago["cpm_alc"]),  "yellow")
+        with k8:  card("CPC",            fmt_brl(m_pago["cpc"]),      "blue")
+        with k9:  card("CAC",            fmt_brl(m_pago["cac"]),      "purple")
+        with k10: card("Frequencia",     "{:.2f}x".format(m_pago["freq"]), "orange")
 
     st.markdown("---")
 
     # ── EVOLUCAO TEMPORAL ──
     st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>', unsafe_allow_html=True)
-    metricas_disp = {"Comissao":"Comissao","Vendas":"Vendas","Cliques Shopee":"Cliques","Investimento":"Investimento"}
+    df_daily["Ticket_Medio"] = df_daily.apply(
+        lambda r: r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0, axis=1)
+    metricas_disp = {"Comissao":"Comissao","Vendas":"Vendas","Cliques Shopee":"Cliques",
+                     "Investimento":"Investimento","Ticket Medio":"Ticket_Medio"}
     col_sel = st.multiselect("Metricas para cruzar", list(metricas_disp.keys()), default=["Comissao","Vendas"])
     if col_sel:
         fig_linha = go.Figure()
