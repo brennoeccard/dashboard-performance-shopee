@@ -441,20 +441,17 @@ def main():
     else:
         d_ini, d_fim = data_min, data_max
 
-    # Se nada seleccionado = mostrar tudo
-    if not sid2_sel: sid2_sel = sid2_opts
-    if not sid1_sel: sid1_sel = sid1_opts
-    if not sid3_sel: sid3_sel = sid3_opts
-
-    # Aplicar filtros
-    df = df_raw[
+    # Aplicar filtros — se nada seleccionado, mostrar tudo sem excepção
+    mask = (
         (df_raw["Data"].dt.date >= d_ini) &
-        (df_raw["Data"].dt.date <= d_fim) &
-        (df_raw["Sub_id2"].isin(sid2_sel)) &
-        (df_raw["Sub_id1"].isin(sid1_sel)) &
-        (df_raw["Sub_id3"].isin(sid3_sel))
-    ].copy()
-    # Remover apenas para visualização em gráficos (não afecta métricas)
+        (df_raw["Data"].dt.date <= d_fim)
+    )
+    if sid2_sel: mask = mask & (df_raw["Sub_id2"].isin(sid2_sel))
+    if sid1_sel: mask = mask & (df_raw["Sub_id1"].isin(sid1_sel))
+    if sid3_sel: mask = mask & (df_raw["Sub_id3"].isin(sid3_sel))
+
+    df = df_raw[mask].copy()
+    # df_viz: apenas para gráficos de canal (remove brancos)
     df_viz = df[df["Sub_id2"].str.strip() != ""].copy()
     df_ant = semana_anterior(df_raw, d_ini, d_fim)
 
