@@ -474,6 +474,8 @@ def main():
         lambda r: (r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0, axis=1)
     df_daily["CTR_calc"] = df_daily.apply(
         lambda r: r["Vendas"]/r["Cliques"]*100 if r["Cliques"]>0 else 0, axis=1)
+    df_daily["Ticket_Medio"] = df_daily.apply(
+        lambda r: r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0, axis=1)
 
     # ── ALERTA ROI ──
     if verificar_alerta_roi(df):
@@ -602,8 +604,6 @@ def main():
 
     # ── EVOLUCAO TEMPORAL ──
     st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>', unsafe_allow_html=True)
-    df_daily["Ticket_Medio"] = df_daily.apply(
-        lambda r: r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0, axis=1)
     metricas_disp = {"Comissao":"Comissao","Vendas":"Vendas","Cliques Shopee":"Cliques",
                      "Investimento":"Investimento","Ticket Medio":"Ticket_Medio"}
     col_sel = st.multiselect("Metricas para cruzar", list(metricas_disp.keys()), default=["Comissao","Vendas"])
