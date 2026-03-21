@@ -387,23 +387,12 @@ def main():
         st.session_state.preset = "all"
 
     preset = st.session_state.get("preset", "all")
-    # Para hoje/ontem, usar data_max como referencia se nao ha dados recentes
-    if preset == "hoje":
-        d_ini_def = max(hoje, data_min)
-        d_fim_def = min(hoje, data_max)
-        if d_ini_def > data_max:  # sem dados de hoje, volta para all
-            d_ini_def, d_fim_def = data_min, data_max
-    elif preset == "ontem":
-        ontem = hoje - timedelta(days=1)
-        d_ini_def = max(ontem, data_min)
-        d_fim_def = min(ontem, data_max)
-        if d_ini_def > data_max:
-            d_ini_def, d_fim_def = data_min, data_max
-    elif preset == "7d":      d_ini_def, d_fim_def = data_max - timedelta(days=6), data_max
-    elif preset == "14d":     d_ini_def, d_fim_def = data_max - timedelta(days=13), data_max
-    elif preset == "28d":     d_ini_def, d_fim_def = data_max - timedelta(days=27), data_max
-    elif preset == "30d":     d_ini_def, d_fim_def = data_max - timedelta(days=29), data_max
-    else:                     d_ini_def, d_fim_def = data_min, data_max
+    if preset == "7d":    d_ini_def = max(data_max - timedelta(days=6),  data_min)
+    elif preset == "14d": d_ini_def = max(data_max - timedelta(days=13), data_min)
+    elif preset == "28d": d_ini_def = max(data_max - timedelta(days=27), data_min)
+    elif preset == "30d": d_ini_def = max(data_max - timedelta(days=29), data_min)
+    else:                 d_ini_def = data_min
+    d_fim_def = data_max  # sempre termina no ultimo dia disponivel
 
     sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
     sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
@@ -411,21 +400,17 @@ def main():
 
     with st.expander("🎛️ Filtros", expanded=False):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
-        b1,b2,b3,b4,b5,b6,b7 = st.columns(7)
+        b1,b2,b3,b4,b5 = st.columns(5)
         with b1:
-            if st.button("Hoje",    use_container_width=True, key="bh"):  st.session_state.preset="hoje";  st.rerun()
+            if st.button("7 dias",  use_container_width=True, key="b7"):  st.session_state.preset="7d";  st.rerun()
         with b2:
-            if st.button("Ontem",   use_container_width=True, key="bo"):  st.session_state.preset="ontem"; st.rerun()
+            if st.button("14 dias", use_container_width=True, key="b14"): st.session_state.preset="14d"; st.rerun()
         with b3:
-            if st.button("7 dias",  use_container_width=True, key="b7"):  st.session_state.preset="7d";    st.rerun()
+            if st.button("28 dias", use_container_width=True, key="b28"): st.session_state.preset="28d"; st.rerun()
         with b4:
-            if st.button("14 dias", use_container_width=True, key="b14"): st.session_state.preset="14d";   st.rerun()
+            if st.button("30 dias", use_container_width=True, key="b30"): st.session_state.preset="30d"; st.rerun()
         with b5:
-            if st.button("28 dias", use_container_width=True, key="b28"): st.session_state.preset="28d";   st.rerun()
-        with b6:
-            if st.button("30 dias", use_container_width=True, key="b30"): st.session_state.preset="30d";   st.rerun()
-        with b7:
-            if st.button("Tudo",    use_container_width=True, key="ba"):  st.session_state.preset="all";   st.rerun()
+            if st.button("Tudo",    use_container_width=True, key="ba"):  st.session_state.preset="all"; st.rerun()
 
         datas = st.date_input("", value=(d_ini_def, d_fim_def), min_value=data_min, max_value=data_max, label_visibility="collapsed")
         if isinstance(datas, tuple) and len(datas) == 2:
