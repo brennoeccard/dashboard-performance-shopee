@@ -270,7 +270,7 @@ def sparkline(df_daily, col, color="#4f8ef7"):
     fig = go.Figure(go.Scatter(
         x=df14["Data"], y=df14[col],
         mode="lines", line=dict(color=color, width=1.5),
-        fill="tozeroy", fillcolor=color.replace(")", ",0.1)").replace("rgb","rgba") if "rgb" in color else color+"22",
+        fill="tozeroy", fillcolor=color + "33",
     ))
     fig.update_layout(
         height=50, margin=dict(l=0,r=0,t=0,b=0),
@@ -689,4 +689,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
