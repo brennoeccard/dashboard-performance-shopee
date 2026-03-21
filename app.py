@@ -381,6 +381,8 @@ def main():
     df_pago = df[df["Sub_id2"].str.lower()=="pago"]
     df_org  = df[df["Sub_id2"].str.lower()=="organico"]
     df_story= df[df["Sub_id2"].str.lower()=="story"]
+    # Remover canal em branco dos gráficos
+    df = df[df["Sub_id2"].str.strip() != ""]
     m_pago  = calcular(df_pago)  if len(df_pago)  > 0 else None
     m_org   = calcular(df_org)   if len(df_org)   > 0 else None
     m_story = calcular(df_story) if len(df_story) > 0 else None
@@ -503,7 +505,7 @@ def main():
 
     if col_sel:
         fig_linha = go.Figure()
-        cores = ["#4f8ef7","#2ecc71","#f1c40f","#e74c3c","#9b59b6"]
+        cores = ["#bd6d34","#c5936d","#d2b095","#9c5834","#562d1d"]
         for i, nome in enumerate(col_sel):
             col_real = metricas_disp[nome]
             cor = cores[i % len(cores)]
@@ -574,11 +576,30 @@ def main():
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        bot5 = df_sid3.nsmallest(5,"Comissao")
-        fig = px.bar(bot5, x="Comissao", y="Sub_id3", orientation="h",
-                     title="📉 Bottom 5 por Comissão", text="Comissao",
-                     color_discrete_sequence=["#562d1d"])
-        fig.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
+        top5_vendas = df_sid3.nlargest(5,"Vendas")
+        fig = px.bar(top5_vendas, x="Vendas", y="Sub_id3", orientation="h",
+                     title="🏆 Top 5 por Vendas", text="Vendas",
+                     color_discrete_sequence=["#9c5834"])
+        fig.update_traces(texttemplate="%{text}", textposition="outside")
+        fig.update_layout(**PLOTLY_THEME)
+        st.plotly_chart(fig, use_container_width=True)
+
+    col3, col4 = st.columns(2)
+    with col3:
+        top5_cliques = df_sid3.nlargest(5,"Cliques")
+        fig = px.bar(top5_cliques, x="Cliques", y="Sub_id3", orientation="h",
+                     title="👆 Top 5 por Cliques", text="Cliques",
+                     color_discrete_sequence=["#c5936d"])
+        fig.update_traces(texttemplate="%{text}", textposition="outside")
+        fig.update_layout(**PLOTLY_THEME)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col4:
+        top5_ctr = df_sid3.nlargest(5,"CTR")
+        fig = px.bar(top5_ctr, x="CTR", y="Sub_id3", orientation="h",
+                     title="🎯 Top 5 por CTR (%)", text="CTR",
+                     color_discrete_sequence=["#d2b095"])
+        fig.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -615,15 +636,58 @@ def main():
     # ── FUNIL PAGO ──
     if m_pago and m_pago["impressoes"] > 0:
         st.markdown('<div class="section-title">🔽 Funil de Conversão (Pago)</div>', unsafe_allow_html=True)
+        # Calcular período anterior para comparação
+        df_pago_ant = df_ant[df_ant["Sub_id2"].str.lower()=="pago"] if not df_ant.empty else pd.DataFrame()
+        m_pago_ant  = calcular(df_pago_ant) if not df_pago_ant.empty else None
+
+        steps     = ["Impressões","Alcance","Cliques Meta","Vendas"]
+        vals_cur  = [m_pago["impressoes"],m_pago["alcance"],m_pago["cliques_meta"],m_pago["vendas"]]
+        vals_ant  = [m_pago_ant["impressoes"],m_pago_ant["alcance"],
+                     m_pago_ant["cliques_meta"],m_pago_ant["vendas"]] if m_pago_ant else None
+
         fig_funil = go.Figure(go.Funnel(
-            y=["Impressões","Alcance","Cliques Meta","Vendas"],
-            x=[m_pago["impressoes"],m_pago["alcance"],
-               m_pago["cliques_meta"],m_pago["vendas"]],
+            y=steps, x=vals_cur,
             textinfo="value+percent initial",
-            marker=dict(color=["#4f8ef7","#9b59b6","#f1c40f","#2ecc71"])
+            marker=dict(color=["#bd6d34","#9c5834","#c5936d","#d2b095"]),
+            name="Período actual",
         ))
-        fig_funil.update_layout(title="Funil: Impressões → Vendas", **PLOTLY_THEME)
+
+        if vals_ant:
+            fig_funil.add_trace(go.Funnel(
+                y=steps, x=vals_ant,
+                textinfo="value",
+                marker=dict(color=["#3a2c28","#3a2c28","#3a2c28","#3a2c28"]),
+                name="Período anterior",
+                opacity=0.5,
+            ))
+
+        fig_funil.update_layout(title="Funil de Conversão · Actual vs Período Anterior",
+                                funnelmode="overlay", **PLOTLY_THEME)
         st.plotly_chart(fig_funil, use_container_width=True)
+
+        # Alertas de variação significativa no funil
+        if vals_ant and vals_ant[0] > 0:
+            alertas = []
+            labels_steps = ["Impressões→Alcance","Alcance→Cliques Meta","Cliques Meta→Vendas"]
+            for i in range(len(steps)-1):
+                ctr_cur = vals_cur[i+1]/vals_cur[i]*100 if vals_cur[i] > 0 else 0
+                ctr_ant = vals_ant[i+1]/vals_ant[i]*100 if vals_ant[i] > 0 else 0
+                diff    = ctr_cur - ctr_ant
+                if abs(diff) >= 1.0:
+                    emoji = "📈" if diff > 0 else "📉"
+                    cor   = "green" if diff > 0 else "red"
+                    alertas.append((emoji, labels_steps[i], ctr_ant, ctr_cur, diff, cor))
+
+            if alertas:
+                st.markdown("**Variações significativas no funil:**")
+                cols_al = st.columns(len(alertas))
+                for idx, (emoji, label, ant, cur, diff, cor) in enumerate(alertas):
+                    with cols_al[idx]:
+                        sinal = "+" if diff > 0 else ""
+                        card(f"{emoji} {label}",
+                             f"{cur:.1f}%",
+                             cor,
+                             f'<span class="metric-delta-{"pos" if diff>0 else "neg"}">{sinal}{diff:.1f}pp vs anterior ({ant:.1f}%)</span>')
 
     # ── EVOLUÇÃO CPM/CPC/CAC ──
     if len(df_pago) > 0:
