@@ -369,7 +369,7 @@ def main():
         <a href="#campeoes" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🏆 Campeoes</a>
         <a href="#funil" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🔽 Funil</a>
         <a href="#metricas-pago" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📉 Metricas Pago</a>
-        <a href="#insights-ia" style="color:#bd6d34;font-size:11px;text-decoration:none;background:#2a1f1a;padding:3px 10px;border-radius:20px;border:1px solid #bd6d34;">🤖 Insights IA</a>
+        <a href="#ipa" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🎯 IPA</a> <a href="#insights-ia" style="color:#bd6d34;font-size:11px;text-decoration:none;background:#2a1f1a;padding:3px 10px;border-radius:20px;border:1px solid #bd6d34;">🤖 Insights IA</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -874,6 +874,87 @@ def main():
                        mime="text/html")
 
     # ── INSIGHTS IA ──
+    # ── IPA — INDICE DE POTENCIAL DE ANUNCIO ──
+    st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+        <div style="color:#c5936d;font-size:12px;line-height:1.6;">
+            O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo (Meta Ads -> Shopee).<br>
+            <b style="color:#bd6d34;">Formula:</b> Comissao×0.40 + Vendas×0.25 + Ticket Medio×0.25 + CTR×0.10 (normalizados 0-100)<br>
+            <b style="color:#c0392b;">N/A</b> = menos de 3 vendas — sinal insuficiente para recomendar investimento.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    df_ipa_viz = df[df["Sub_id2"].str.lower().isin(["organico","story"])].copy()
+    df_ipa_viz = df_ipa_viz.groupby(["Sub_id3","Sub_id1"]).agg(
+        Comissao=("Comissao","sum"),
+        Vendas=("Vendas","sum"),
+        Cliques=("Cliques","sum"),
+    ).reset_index()
+    df_ipa_viz["CTR"] = (df_ipa_viz["Vendas"] / df_ipa_viz["Cliques"] * 100).fillna(0)
+    df_ipa_viz["Ticket"] = (df_ipa_viz["Comissao"] / df_ipa_viz["Vendas"]).fillna(0)
+
+    # Normalizar 0-100 apenas para items com vendas >= 3
+    df_validos = df_ipa_viz[df_ipa_viz["Vendas"] >= 3].copy()
+
+    if not df_validos.empty:
+        for col in ["Comissao","Vendas","Ticket","CTR"]:
+            mn, mx = df_validos[col].min(), df_validos[col].max()
+            if mx > mn:
+                df_validos[col+"_n"] = ((df_validos[col] - mn) / (mx - mn) * 100)
+            else:
+                df_validos[col+"_n"] = 50.0
+
+        df_validos["IPA"] = (
+            df_validos["Comissao_n"] * 0.40 +
+            df_validos["Vendas_n"]   * 0.25 +
+            df_validos["Ticket_n"]   * 0.25 +
+            df_validos["CTR_n"]      * 0.10
+        ).round(1)
+
+    # Juntar com invalidos (N/A)
+    df_ipa_viz = df_ipa_viz.merge(
+        df_validos[["Sub_id3","Sub_id1","IPA"]] if not df_validos.empty else pd.DataFrame(columns=["Sub_id3","Sub_id1","IPA"]),
+        on=["Sub_id3","Sub_id1"], how="left"
+    )
+    df_ipa_viz["IPA_display"] = df_ipa_viz["IPA"].apply(lambda x: "{:.1f}".format(x) if pd.notna(x) else "N/A")
+    df_ipa_viz["IPA_sort"] = df_ipa_viz["IPA"].fillna(-1)
+
+    # Excluir os que ja estao no pago
+    ja_pago_ids = set(df[df["Sub_id2"].str.lower()=="pago"]["Sub_id3"].unique())
+    df_ipa_viz = df_ipa_viz[~df_ipa_viz["Sub_id3"].isin(ja_pago_ids)]
+    df_ipa_viz = df_ipa_viz.sort_values("IPA_sort", ascending=False).reset_index(drop=True)
+
+    # Grafico de barras top 15
+    df_ipa_chart = df_ipa_viz[df_ipa_viz["IPA_sort"] >= 0].head(15).sort_values("IPA_sort", ascending=True)
+    if not df_ipa_chart.empty:
+        fig_ipa = px.bar(
+            df_ipa_chart, x="IPA_sort", y="Sub_id3",
+            orientation="h",
+            title="Top Criativos por IPA (organico + story, excluindo ja testados no pago)",
+            text="IPA_display",
+            color="IPA_sort",
+            color_continuous_scale=["#562d1d","#9c5834","#bd6d34","#f6e8d8"],
+            hover_data={"Sub_id1":True, "Vendas":True, "Comissao":":.2f",
+                        "CTR":":.2f", "Ticket":":.2f", "IPA_sort":False},
+            labels={"IPA_sort":"IPA","Sub_id3":"Criativo (Sub_id3)"},
+        )
+        fig_ipa.update_traces(textposition="outside")
+        fig_ipa.update_layout(**PLOTLY_THEME, height=max(300, len(df_ipa_chart)*40),
+                              coloraxis_showscale=False,
+                              margin=dict(l=0,r=60,t=40,b=0))
+        st.plotly_chart(fig_ipa, use_container_width=True)
+
+    # Tabela completa
+    df_ipa_table = df_ipa_viz[["Sub_id3","Sub_id1","IPA_display","Vendas","Comissao","CTR","Ticket"]].copy()
+    df_ipa_table.columns = ["Sub_id3","Sub_id1 (campanha)","IPA","Vendas","Comissao (R$)","CTR (%)","Ticket Medio (R$)"]
+    df_ipa_table["Comissao (R$)"] = df_ipa_table["Comissao (R$)"].apply(lambda x: "{:.2f}".format(x))
+    df_ipa_table["CTR (%)"] = df_ipa_table["CTR (%)"].apply(lambda x: "{:.2f}%".format(x))
+    df_ipa_table["Ticket Medio (R$)"] = df_ipa_table["Ticket Medio (R$)"].apply(lambda x: "{:.2f}".format(x))
+    st.dataframe(df_ipa_table, use_container_width=True, height=300)
+
+    
     st.markdown('<div id="insights-ia" class="section-title">🤖 DESTRAVA AI - Insights & Recomendacoes</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
