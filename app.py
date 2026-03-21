@@ -1070,7 +1070,7 @@ def main():
         </div>
         <div style="background:#1a1210; border:1px solid #9c5834; border-radius:10px; padding:16px;">
             <div style="color:#9c5834; font-size:13px; font-weight:700; margin-bottom:6px;">
-                📊 Visão Geral (todos os canais)
+                Visão Geral (todos os canais)
             </div>
             <div style="color:#c5936d; font-size:12px; line-height:1.5;">
                 Compara pago, orgânico e story lado a lado.<br>
