@@ -28,6 +28,50 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
+    /* Force dark mode always */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+        background-color: #0f0d0b !important;
+        color: #f6e8d8 !important;
+    }
+    /* Subtle background image */
+    [data-testid="stAppViewContainer"] {
+        background-image: url("https://raw.githubusercontent.com/brennoeccard/dashboard-performance-shopee/main/logo_bg.png");
+        background-repeat: no-repeat;
+        background-position: center center;
+        background-size: 40%;
+        background-attachment: fixed;
+        opacity: 1;
+    }
+    /* Overlay to darken the bg image */
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(15, 13, 11, 0.93);
+        z-index: 0;
+        pointer-events: none;
+    }
+    [data-testid="stMain"] { position: relative; z-index: 1; }
+    /* Sidebar fix */
+    [data-testid="stSidebar"] {
+        background-color: #110e0c !important;
+        border-right: 1px solid #3a2c28 !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #f6e8d8 !important;
+    }
+    [data-testid="stSidebar"] .stMultiSelect > div,
+    [data-testid="stSidebar"] .stDateInput > div,
+    [data-testid="stSidebar"] input {
+        background-color: #1a1210 !important;
+        color: #f6e8d8 !important;
+        border-color: #3a2c28 !important;
+    }
+    /* Multiselect tags */
+    [data-testid="stSidebar"] span[data-baseweb="tag"] {
+        background-color: #3a2c28 !important;
+        color: #f6e8d8 !important;
+    }
     .main { background-color: #0f0d0b; }
     .metric-card {
         background: linear-gradient(135deg, #1a1210, #221a16);
@@ -333,33 +377,47 @@ def main():
         st.error("Sem dados disponíveis. Verifica a planilha.")
         return
 
-    # ── SIDEBAR ──
+    # ── TOP BAR: utilizador + logout ──
     with st.sidebar:
-        st.markdown("## 🎛️ Filtros")
-        data_min = df_raw["Data"].min().date()
-        data_max = df_raw["Data"].max().date()
-        datas = st.date_input("Período", value=(data_min, data_max),
-                              min_value=data_min, max_value=data_max)
-        if isinstance(datas, tuple) and len(datas) == 2:
-            d_ini, d_fim = datas
-        else:
-            d_ini, d_fim = data_min, data_max
-
-        sid2_opts = sorted(df_raw["Sub_id2"].unique())
-        sid2_sel  = st.multiselect("Canal (Sub_id2)", sid2_opts, default=sid2_opts)
-        sid1_opts = sorted(df_raw["Sub_id1"].unique())
-        sid1_sel  = st.multiselect("Sub_id1", sid1_opts, default=sid1_opts)
-        sid3_opts = sorted(df_raw["Sub_id3"].unique())
-        sid3_sel  = st.multiselect("Sub_id3", sid3_opts, default=sid3_opts)
-
-        st.markdown("---")
+        st.markdown(f"### 👤 {st.session_state.get('usuario','')}")
         if st.button("🔄 Actualizar dados", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        st.markdown(f"👤 **{st.session_state.get('usuario','')}**")
         if st.button("🚪 Sair", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
+
+    # ── FILTROS NO TOPO ──
+    data_min = df_raw["Data"].min().date()
+    data_max = df_raw["Data"].max().date()
+
+    with st.expander("🎛️ Filtros", expanded=False):
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        with fc1:
+            datas = st.date_input("Período", value=(data_min, data_max),
+                                  min_value=data_min, max_value=data_max)
+        with fc2:
+            sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
+            sid2_sel  = st.multiselect("Canal (Sub_id2)", sid2_opts, default=[],
+                                       placeholder="Todos os canais")
+        with fc3:
+            sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
+            sid1_sel  = st.multiselect("Sub_id1", sid1_opts, default=[],
+                                       placeholder="Todos os Sub_id1")
+        with fc4:
+            sid3_opts = sorted([x for x in df_raw["Sub_id3"].unique() if x.strip()])
+            sid3_sel  = st.multiselect("Sub_id3", sid3_opts, default=[],
+                                       placeholder="Todos os Sub_id3")
+
+    if isinstance(datas, tuple) and len(datas) == 2:
+        d_ini, d_fim = datas
+    else:
+        d_ini, d_fim = data_min, data_max
+
+    # Se nada seleccionado = mostrar tudo
+    if not sid2_sel: sid2_sel = sid2_opts
+    if not sid1_sel: sid1_sel = sid1_opts
+    if not sid3_sel: sid3_sel = sid3_opts
 
     # Aplicar filtros
     df = df_raw[
