@@ -425,16 +425,6 @@ def main():
             st.rerun()
 
     # ── FILTROS NO TOPO ──
-
-    # ── FILTROS NO TOPO ──
-    data_min = df_raw["Data"].min().date()
-    data_max = df_raw["Data"].max().date()
-
-    with st.expander("🎛️ Filtros", expanded=False):
-        # Atalhos de período
-        fc0, fc1, fc2, fc3, fc4 = st.columns([2, 1, 1, 1, 1])
-        with fc0:
-    # ── FILTROS NO TOPO ──
     data_min = df_raw["Data"].min().date()
     data_max = df_raw["Data"].max().date()
 
