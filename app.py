@@ -647,7 +647,7 @@ def main():
 
     col1,col2 = st.columns(2)
     with col1:
-        top5 = df_sid3.nlargest(5,"Comissao").copy()
+        top5 = df_sid3.nlargest(5,"Comissao").copy().sort_values("Comissao", ascending=True)
         top5["label"] = top5.apply(lambda r: "R$ {:,.2f} | {:,.0f} vendas | CTR {:.1f}%".format(r["Comissao"],r["Vendas"],r["CTR"]), axis=1)
         fig = px.bar(top5, x="Comissao", y="Sub_id3", orientation="h",
                      title="Top 5 por Comissao", text="label",
@@ -657,7 +657,7 @@ def main():
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        top5v = df_sid3.nlargest(5,"Vendas")
+        top5v = df_sid3.nlargest(5,"Vendas").sort_values("Vendas", ascending=True)
         fig = px.bar(top5v, x="Vendas", y="Sub_id3", orientation="h",
                      title="Top 5 por Vendas", text="Vendas",
                      color_discrete_sequence=["#c5936d"])
@@ -667,7 +667,7 @@ def main():
 
     col3,col4 = st.columns(2)
     with col3:
-        top5c = df_sid3.nlargest(5,"Cliques")
+        top5c = df_sid3.nlargest(5,"Cliques").sort_values("Cliques", ascending=True)
         fig = px.bar(top5c, x="Cliques", y="Sub_id3", orientation="h",
                      title="Top 5 por Cliques", text="Cliques",
                      color_discrete_sequence=["#d2b095"])
@@ -675,7 +675,7 @@ def main():
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
     with col4:
-        top5ctr = df_sid3.nlargest(5,"CTR")
+        top5ctr = df_sid3.nlargest(5,"CTR").sort_values("CTR", ascending=True)
         fig = px.bar(top5ctr, x="CTR", y="Sub_id3", orientation="h",
                      title="Top 5 por CTR (%)", text="CTR",
                      color_discrete_sequence=["#bd6d34"])
@@ -698,7 +698,7 @@ def main():
 
     # ── CORRELACAO ──
     st.markdown('<div class="section-title">🔗 Matriz de Correlacao</div>', unsafe_allow_html=True)
-    df_corr = df_daily[["Vendas","Comissao","Cliques","Investimento"]].corr()
+    df_corr = df_daily[df_daily["Investimento"]>0][["Vendas","Comissao","Cliques","Investimento"]].corr()
     fig_corr = px.imshow(df_corr, text_auto=".2f", title="Correlacao entre Metricas",
                          color_continuous_scale="RdBu_r", zmin=-1, zmax=1)
     fig_corr.update_layout(**PLOTLY_THEME)
