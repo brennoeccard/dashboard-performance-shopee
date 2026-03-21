@@ -682,15 +682,50 @@ def main():
         df_pago_all = df_raw[df_raw["Sub_id2"].str.lower()=="pago"]
         m_pago_all  = calcular(df_pago_all) if not df_pago_all.empty else None
 
-        # Selectbox ANTES das colunas para estar disponivel em ambas
-        ctr_selecionado = st.selectbox("Destacar no funil:", [
-            "Nenhum",
-            "Imp -> Alcance",
-            "Alcance -> Cliques",
-            "Cliques -> Vendas",
-            "Imp -> Cliques (global)",
-            "Imp -> Vendas (global)",
-        ], label_visibility="collapsed")
+        # Botao para alternar entre CTR Anterior e CTR Inicial
+        if "modo_ctr" not in st.session_state:
+            st.session_state.modo_ctr = "anterior"
+
+        col_btn_ctr, _ = st.columns([1, 3])
+        with col_btn_ctr:
+            if st.session_state.modo_ctr == "anterior":
+                if st.button("Ver CTR Inicial", use_container_width=True):
+                    st.session_state.modo_ctr = "inicial"
+                    st.rerun()
+            else:
+                if st.button("Ver CTR Anterior", use_container_width=True):
+                    st.session_state.modo_ctr = "anterior"
+                    st.rerun()
+
+        modo_ctr = st.session_state.modo_ctr
+
+        # Definir cards e highlight conforme modo
+        if modo_ctr == "anterior":
+            cards_f = [
+                ("Impressoes -> Alcance",
+                 "Frequencia de alcance. Ideal > 60%. Baixo = audiencia muito restrita.",
+                 "alcance","impressoes"),
+                ("Alcance -> Cliques",
+                 "CTR do criativo. Ideal > 1%. Baixo = criativo fraco ou saturado.",
+                 "cliques_meta","alcance"),
+                ("Cliques -> Vendas",
+                 "Taxa de conversao final. Baixo = problema na pagina do produto ou preco.",
+                 "vendas","cliques_meta"),
+            ]
+            highlighted = []
+        else:
+            cards_f = [
+                ("Impressoes -> Alcance",
+                 "Alcance vs total de impressoes. Referencia base do funil.",
+                 "alcance","impressoes"),
+                ("Impressoes -> Cliques",
+                 "Eficiencia global do criativo vs total de impressoes.",
+                 "cliques_meta","impressoes"),
+                ("Impressoes -> Vendas",
+                 "O mais importante: de tudo que viram, quantos compraram.",
+                 "vendas","impressoes"),
+            ]
+            highlighted = []
 
         col_funil, col_steps = st.columns([1.2, 1])
         with col_funil:
@@ -699,57 +734,45 @@ def main():
             fp = [m_pago["vendas"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
                   m_pago["cliques_meta"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
                   m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0, 100]
-            # Map selected CTR to highlighted bars
-            highlight_map = {
-                "Imp -> Alcance":         ["Impressoes","Alcance"],
-                "Alcance -> Cliques":     ["Alcance","Cliques Meta"],
-                "Cliques -> Vendas":      ["Cliques Meta","Vendas"],
-                "Imp -> Cliques (global)":["Impressoes","Cliques Meta"],
-                "Imp -> Vendas (global)": ["Impressoes","Vendas"],
-            }
-            highlighted = highlight_map.get(ctr_selecionado, [])
-            cores_base = {"Impressoes":"#bd6d34","Alcance":"#9c5834","Cliques Meta":"#c5936d","Vendas":"#d2b095"}
-            cores_hl   = {"Impressoes":"#f6e8d8","Alcance":"#f6e8d8","Cliques Meta":"#f6e8d8","Vendas":"#f6e8d8"}
 
+            # Highlight baseado nos cards visiveis
+            if modo_ctr == "anterior":
+                highlight_pairs = [("Impressoes","Alcance"),("Alcance","Cliques Meta"),("Cliques Meta","Vendas")]
+            else:
+                highlight_pairs = [("Impressoes","Alcance"),("Impressoes","Cliques Meta"),("Impressoes","Vendas")]
+            highlighted_bars = set()
+            for a, b in highlight_pairs:
+                highlighted_bars.add(a)
+                highlighted_bars.add(b)
+
+            cores_base = {"Impressoes":"#bd6d34","Alcance":"#9c5834","Cliques Meta":"#c5936d","Vendas":"#d2b095"}
             fig_f = go.Figure()
-            for i,(l,v,p) in enumerate(zip(fl,fv,fp)):
-                cor = cores_hl[l] if l in highlighted else cores_base[l]
-                lw  = 3 if l in highlighted else 0
+            for l,v,p in zip(fl,fv,fp):
+                cor = "#f6e8d8" if l in highlighted_bars else cores_base[l]
+                lw  = 2 if l in highlighted_bars else 0
                 fig_f.add_trace(go.Bar(x=[p], y=[l], orientation="h",
                     marker_color=cor, marker_line_color="#ffffff", marker_line_width=lw,
                     text="{:,.0f}  ({:.2f}%)".format(v,p), textposition="inside",
                     name=l, showlegend=False))
-            fig_f.update_layout(title="Funil - % do total de impressoes",
-                                barmode="overlay", **PLOTLY_THEME, height=240,
-                                margin=dict(l=0,r=0,t=40,b=0))
+            fig_f.update_layout(
+                title="Funil - % do total de impressoes ({})".format("CTR Anterior" if modo_ctr=="anterior" else "CTR Inicial"),
+                barmode="overlay", **PLOTLY_THEME, height=240, margin=dict(l=0,r=0,t=40,b=0))
             st.plotly_chart(fig_f, use_container_width=True)
-            # Legenda abaixo
-            st.markdown('<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:-8px;">' +
+            st.markdown(
+                '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:-8px;">' +
                 "".join(['<span style="font-size:10px;color:#c5936d;"><span style="color:{};font-size:14px;">■</span> {}</span>'.format(cores_base[k],k) for k in cores_base]) +
                 '</div>', unsafe_allow_html=True)
 
         with col_steps:
-            st.markdown('<div style="color:#c5936d;font-size:10px;margin-bottom:6px;"><b style="color:#f6e8d8;">Ant</b>=step a step | <b style="color:#f6e8d8;">Ini</b>=vs Impressoes | <b style="color:#bd6d34;">Delta</b>=vs semana ant.</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="color:#c5936d;font-size:11px;margin-bottom:8px;">'
+                '<b style="color:#f6e8d8;">{}</b> | <b style="color:#bd6d34;">Delta</b> = vs semana anterior'
+                '</div>'.format("CTR Anterior: conversao entre steps consecutivos" if modo_ctr=="anterior" else "CTR Inicial: todos os steps vs Impressoes"),
+                unsafe_allow_html=True)
 
-            cards_f = [
-                ("Ant: Imp->Alc", "Frequencia de alcance. Ideal > 60%. Baixo = audiencia muito restrita.",
-                 "alcance","impressoes", None, None, "Imp -> Alcance"),
-                ("Ant: Alc->Clq", "CTR do criativo. Ideal > 1%. Baixo = criativo fraco ou saturado.",
-                 "cliques_meta","alcance", None, None, "Alcance -> Cliques"),
-                ("Ant: Clq->Vnd", "Taxa de conversao. Baixo = problema na pagina do produto ou preco.",
-                 "vendas","cliques_meta", None, None, "Cliques -> Vendas"),
-                ("Ini: Imp->Clq", "Eficiencia global do criativo vs total de impressoes.",
-                 "cliques_meta","impressoes", "cliques_meta","impressoes", "Imp -> Cliques (global)"),
-                ("Ini: Imp->Vnd", "O mais importante: de tudo que viram, quantos compraram.",
-                 "vendas","impressoes", "vendas","impressoes", "Imp -> Vendas (global)"),
-            ]
-
-            for titulo, dica, num, den, num_ini, den_ini, key_sel in cards_f:
+            for titulo, dica, num, den in cards_f:
                 cur = m_pago[num]/m_pago[den]*100 if m_pago[den]>0 else 0
                 ant_val = (m_ant_pago[num]/m_ant_pago[den]*100 if m_ant_pago and m_ant_pago[den]>0 else None)
-                ini_val = (m_pago_all[num_ini]/m_pago_all[den_ini]*100 if num_ini and m_pago_all and m_pago_all[den_ini]>0 else None)
-                is_selected = ctr_selecionado == key_sel
-                border_extra = "border:2px solid #f6e8d8 !important;" if is_selected else ""
 
                 parts = []
                 if ant_val is not None:
@@ -757,21 +780,16 @@ def main():
                     sinal = "+" if diff>0 else ""
                     cor = "#7a9e4e" if diff>0 else "#c0392b"
                     arr = "▲" if diff>0 else "▼"
-                    parts.append('<span style="color:{};font-size:9px;">{} {}{}pp vs ant({:.3f}%)</span>'.format(cor,arr,sinal,round(diff,3),ant_val))
-                if ini_val is not None:
-                    parts.append('<span style="color:#c5936d;font-size:9px;">Hist:{:.3f}%</span>'.format(ini_val))
-                delta_str = " | ".join(parts) if parts else '<span style="color:#c5936d;font-size:9px;">sem ref.</span>'
+                    parts.append('<span style="color:{};font-size:10px;">{} {}{}pp vs ant. ({:.3f}%)</span>'.format(cor,arr,sinal,round(diff,3),ant_val))
+                delta_str = parts[0] if parts else '<span style="color:#c5936d;font-size:10px;">sem referencia anterior</span>'
 
                 st.markdown(
-                    '<div class="metric-card" style="margin-bottom:3px;padding:8px 12px;{border}" title="{dica}">'
-                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    '<div class="metric-label" style="font-size:9px;">{titulo}</div>'
-                    '<div class="metric-value" style="font-size:14px;margin:0;">{cur:.3f}%</div>'
-                    '</div>'
-                    '<div style="margin-top:2px;">{delta}</div>'
-                    '</div>'.format(border=border_extra, dica=dica, titulo=titulo, cur=cur, delta=delta_str),
-                    unsafe_allow_html=True
-                )
+                    '<div class="metric-card" style="margin-bottom:6px;padding:10px 14px;" title="{dica}">'
+                    '<div class="metric-label" style="font-size:10px;">{titulo}</div>'
+                    '<div class="metric-value" style="font-size:18px;">{cur:.3f}%</div>'
+                    '{delta}'
+                    '</div>'.format(dica=dica, titulo=titulo, cur=cur, delta=delta_str),
+                    unsafe_allow_html=True)
 
     # ── EVOLUCAO METRICAS PAGO ──
     if len(df_pago) > 0:
