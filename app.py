@@ -425,31 +425,53 @@ def main():
             st.rerun()
 
     # ── FILTROS NO TOPO ──
+
+    # ── FILTROS NO TOPO ──
     data_min = df_raw["Data"].min().date()
     data_max = df_raw["Data"].max().date()
 
     with st.expander("🎛️ Filtros", expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        with fc1:
-            datas = st.date_input("Período", value=(data_min, data_max),
-                                  min_value=data_min, max_value=data_max)
-        with fc2:
+        # Atalhos de período
+        fc0, fc1, fc2, fc3, fc4 = st.columns([2, 1, 1, 1, 1])
+        with fc0:
+            preset = st.radio("Período rápido", ["Personalizado","7 dias","14 dias","28 dias","30 dias"],
+                              horizontal=True, label_visibility="collapsed")
+
+        if preset == "7 dias":
+            d_ini = data_max - timedelta(days=6)
+            d_fim = data_max
+        elif preset == "14 dias":
+            d_ini = data_max - timedelta(days=13)
+            d_fim = data_max
+        elif preset == "28 dias":
+            d_ini = data_max - timedelta(days=27)
+            d_fim = data_max
+        elif preset == "30 dias":
+            d_ini = data_max - timedelta(days=29)
+            d_fim = data_max
+        else:
+            col_data, _, _, _ = st.columns(4)
+            with col_data:
+                datas = st.date_input("Período", value=(data_min, data_max),
+                                      min_value=data_min, max_value=data_max)
+            if isinstance(datas, tuple) and len(datas) == 2:
+                d_ini, d_fim = datas
+            else:
+                d_ini, d_fim = data_min, data_max
+
+        f1, f2, f3 = st.columns(3)
+        with f1:
             sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
             sid2_sel  = st.multiselect("Canal (Sub_id2)", sid2_opts, default=[],
                                        placeholder="Todos os canais")
-        with fc3:
+        with f2:
             sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
             sid1_sel  = st.multiselect("Sub_id1", sid1_opts, default=[],
                                        placeholder="Todos os Sub_id1")
-        with fc4:
+        with f3:
             sid3_opts = sorted([x for x in df_raw["Sub_id3"].unique() if x.strip()])
             sid3_sel  = st.multiselect("Sub_id3", sid3_opts, default=[],
                                        placeholder="Todos os Sub_id3")
-
-    if isinstance(datas, tuple) and len(datas) == 2:
-        d_ini, d_fim = datas
-    else:
-        d_ini, d_fim = data_min, data_max
 
     # Aplicar filtros — se nada seleccionado, mostrar tudo sem excepção
     mask = (
@@ -757,43 +779,67 @@ def main():
     st.plotly_chart(fig_corr, use_container_width=True)
 
     # ── FUNIL PAGO ──
+    # ── FUNIL PAGO ──
     if m_pago and m_pago["impressoes"] > 0:
         st.markdown('<div class="section-title">🔽 Funil de Conversão (Pago)</div>', unsafe_allow_html=True)
 
         df_pago_ant = df_ant[df_ant["Sub_id2"].str.lower()=="pago"] if not df_ant.empty else pd.DataFrame()
         m_pago_ant  = calcular(df_pago_ant) if not df_pago_ant.empty else None
 
-        # Opção B: Cards por step com ▲▼
-        steps_funil = [
-            ("Impressões → Alcance",
-             m_pago["alcance"] / m_pago["impressoes"] * 100 if m_pago["impressoes"] > 0 else 0,
-             m_pago_ant["alcance"] / m_pago_ant["impressoes"] * 100 if m_pago_ant and m_pago_ant["impressoes"] > 0 else None),
-            ("Alcance → Cliques Meta",
-             m_pago["cliques_meta"] / m_pago["alcance"] * 100 if m_pago["alcance"] > 0 else 0,
-             m_pago_ant["cliques_meta"] / m_pago_ant["alcance"] * 100 if m_pago_ant and m_pago_ant["alcance"] > 0 else None),
-            ("Cliques Meta → Vendas",
-             m_pago["vendas"] / m_pago["cliques_meta"] * 100 if m_pago["cliques_meta"] > 0 else 0,
-             m_pago_ant["vendas"] / m_pago_ant["cliques_meta"] * 100 if m_pago_ant and m_pago_ant["cliques_meta"] > 0 else None),
-            ("Impressões → Vendas",
-             m_pago["vendas"] / m_pago["impressoes"] * 100 if m_pago["impressoes"] > 0 else 0,
-             m_pago_ant["vendas"] / m_pago_ant["impressoes"] * 100 if m_pago_ant and m_pago_ant["impressoes"] > 0 else None),
-        ]
+        # Funil híbrido: gráfico de barras horizontais + CTR por step
+        col_funil, col_steps = st.columns([1.2, 1])
 
-        funil_cols = st.columns(4)
-        for i, (label, cur, ant) in enumerate(steps_funil):
-            with funil_cols[i]:
+        with col_funil:
+            funil_labels = ["Impressões","Alcance","Cliques Meta","Vendas"]
+            funil_vals   = [m_pago["impressoes"], m_pago["alcance"],
+                            m_pago["cliques_meta"], m_pago["vendas"]]
+            funil_pcts   = [100,
+                            m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                            m_pago["cliques_meta"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                            m_pago["vendas"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0]
+
+            fig_funil = go.Figure()
+            cores_funil = ["#bd6d34","#9c5834","#c5936d","#d2b095"]
+            for i, (label, val, pct) in enumerate(zip(funil_labels, funil_vals, funil_pcts)):
+                fig_funil.add_trace(go.Bar(
+                    x=[pct], y=[label], orientation="h",
+                    marker_color=cores_funil[i],
+                    text=f"{val:,.0f}  ({pct:.1f}%)",
+                    textposition="inside",
+                    name=label, showlegend=False,
+                ))
+            fig_funil.update_layout(
+                title="Funil · % do total de impressões",
+                barmode="overlay", **PLOTLY_THEME,
+                height=250, margin=dict(l=0,r=0,t=40,b=0),
+            )
+            st.plotly_chart(fig_funil, use_container_width=True)
+
+        with col_steps:
+            steps_funil = [
+                ("Impressões → Alcance",
+                 m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                 m_pago_ant["alcance"]/m_pago_ant["impressoes"]*100 if m_pago_ant and m_pago_ant["impressoes"]>0 else None),
+                ("Alcance → Cliques",
+                 m_pago["cliques_meta"]/m_pago["alcance"]*100 if m_pago["alcance"]>0 else 0,
+                 m_pago_ant["cliques_meta"]/m_pago_ant["alcance"]*100 if m_pago_ant and m_pago_ant["alcance"]>0 else None),
+                ("Cliques → Vendas",
+                 m_pago["vendas"]/m_pago["cliques_meta"]*100 if m_pago["cliques_meta"]>0 else 0,
+                 m_pago_ant["vendas"]/m_pago_ant["cliques_meta"]*100 if m_pago_ant and m_pago_ant["cliques_meta"]>0 else None),
+            ]
+            for label, cur, ant in steps_funil:
                 if ant is not None:
                     diff = cur - ant
                     sinal = "+" if diff > 0 else ""
-                    cor_delta = "#7a9e4e" if diff > 0 else "#c0392b"
-                    emoji_trend = "📈" if diff > 0 else "📉"
-                    delta_str = f'<span style="color:{cor_delta}; font-size:11px;">{emoji_trend} {sinal}{diff:.2f}pp vs anterior ({ant:.2f}%)</span>'
+                    cor = "#7a9e4e" if diff > 0 else "#c0392b"
+                    emoji_t = "📈" if diff > 0 else "📉"
+                    delta_str = f'<span style="color:{cor};font-size:11px;">{emoji_t} {sinal}{diff:.2f}pp vs ant. ({ant:.2f}%)</span>'
                 else:
-                    delta_str = '<span style="color:#c5936d; font-size:11px;">— sem período anterior</span>'
+                    delta_str = '<span style="color:#c5936d;font-size:11px;">— sem anterior</span>'
                 st.markdown(f"""
-                <div class="metric-card">
+                <div class="metric-card" style="margin-bottom:6px;">
                     <div class="metric-label">{label}</div>
-                    <div class="metric-value">{cur:.2f}%</div>
+                    <div class="metric-value" style="font-size:18px;">{cur:.2f}%</div>
                     {delta_str}
                 </div>""", unsafe_allow_html=True)
 
@@ -837,7 +883,10 @@ Dados actuais:
                     json={"model": "claude-sonnet-4-20250514", "max_tokens": 1000,
                           "messages": [{"role": "user", "content": prompt}]}
                 )
-                analise = resp.json()["content"][0]["text"]
+                resp_json = resp.json()
+                if "error" in resp_json:
+                    raise Exception(f"API Error: {resp_json['error']['message']}")
+                analise = resp_json["content"][0]["text"]
                 st.markdown(f"""
                 <div style="background:linear-gradient(135deg,#1a1210,#221a16);
                             border-radius:12px; padding:20px; margin-top:12px;
@@ -877,7 +926,10 @@ Dados:
                     json={"model": "claude-sonnet-4-20250514", "max_tokens": 800,
                           "messages": [{"role": "user", "content": prompt_geral}]}
                 )
-                analise2 = resp2.json()["content"][0]["text"]
+                resp_json2 = resp2.json()
+                if "error" in resp_json2:
+                    raise Exception(f"API Error: {resp_json2['error']['message']}")
+                analise2 = resp_json2["content"][0]["text"]
                 st.markdown(f"""
                 <div style="background:linear-gradient(135deg,#1a1210,#221a16);
                             border-radius:12px; padding:20px; margin-top:12px;
