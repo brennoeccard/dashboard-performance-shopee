@@ -387,8 +387,18 @@ def main():
         st.session_state.preset = "all"
 
     preset = st.session_state.get("preset", "all")
-    if preset == "hoje":      d_ini_def, d_fim_def = hoje, hoje
-    elif preset == "ontem":   d_ini_def, d_fim_def = hoje - timedelta(days=1), hoje - timedelta(days=1)
+    # Para hoje/ontem, usar data_max como referencia se nao ha dados recentes
+    if preset == "hoje":
+        d_ini_def = max(hoje, data_min)
+        d_fim_def = min(hoje, data_max)
+        if d_ini_def > data_max:  # sem dados de hoje, volta para all
+            d_ini_def, d_fim_def = data_min, data_max
+    elif preset == "ontem":
+        ontem = hoje - timedelta(days=1)
+        d_ini_def = max(ontem, data_min)
+        d_fim_def = min(ontem, data_max)
+        if d_ini_def > data_max:
+            d_ini_def, d_fim_def = data_min, data_max
     elif preset == "7d":      d_ini_def, d_fim_def = data_max - timedelta(days=6), data_max
     elif preset == "14d":     d_ini_def, d_fim_def = data_max - timedelta(days=13), data_max
     elif preset == "28d":     d_ini_def, d_fim_def = data_max - timedelta(days=27), data_max
@@ -448,8 +458,17 @@ def main():
     df_ant = semana_anterior(df_raw, d_ini, d_fim)
 
     if df.empty:
-        st.warning("Sem dados para os filtros seleccionados.")
-        return
+        st.markdown("""
+        <div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;
+                    padding:24px;text-align:center;margin-top:20px;">
+            <div style="font-size:32px;margin-bottom:8px;">📭</div>
+            <div style="color:#f6e8d8;font-size:16px;font-weight:600;">Sem dados para o periodo seleccionado</div>
+            <div style="color:#c5936d;font-size:13px;margin-top:6px;">
+                Tenta outro periodo — os dados mais recentes vao ate {}.
+            </div>
+        </div>
+        """.format(data_max), unsafe_allow_html=True)
+        st.stop()
 
     m     = calcular(df)
     m_ant = calcular(df_ant) if not df_ant.empty else None
