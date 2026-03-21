@@ -434,44 +434,69 @@ def main():
         # Atalhos de período
         fc0, fc1, fc2, fc3, fc4 = st.columns([2, 1, 1, 1, 1])
         with fc0:
-            preset = st.radio("Período rápido", ["Personalizado","7 dias","14 dias","28 dias","30 dias"],
-                              horizontal=True, label_visibility="collapsed")
+    # ── FILTROS NO TOPO ──
+    data_min = df_raw["Data"].min().date()
+    data_max = df_raw["Data"].max().date()
 
-        if preset == "7 dias":
-            d_ini = data_max - timedelta(days=6)
-            d_fim = data_max
-        elif preset == "14 dias":
-            d_ini = data_max - timedelta(days=13)
-            d_fim = data_max
-        elif preset == "28 dias":
-            d_ini = data_max - timedelta(days=27)
-            d_fim = data_max
-        elif preset == "30 dias":
-            d_ini = data_max - timedelta(days=29)
-            d_fim = data_max
+    st.markdown("""
+    <div style="background:#1a1210; border:1px solid #3a2c28; border-radius:10px;
+                padding:16px 20px; margin-bottom:16px;">
+        <div style="color:#bd6d34; font-size:13px; font-weight:700; margin-bottom:12px;">🎛️ Filtros</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.container():
+        row1_c1, row1_c2, row1_c3, row1_c4, row1_c5 = st.columns([1,1,1,1,1])
+        with row1_c1:
+            if st.button("7 dias", use_container_width=True):
+                st.session_state.preset = "7d"
+        with row1_c2:
+            if st.button("14 dias", use_container_width=True):
+                st.session_state.preset = "14d"
+        with row1_c3:
+            if st.button("28 dias", use_container_width=True):
+                st.session_state.preset = "28d"
+        with row1_c4:
+            if st.button("30 dias", use_container_width=True):
+                st.session_state.preset = "30d"
+        with row1_c5:
+            if st.button("Todo o período", use_container_width=True):
+                st.session_state.preset = "all"
+
+        preset = st.session_state.get("preset", "all")
+        if preset == "7d":
+            default_ini, default_fim = data_max - timedelta(days=6), data_max
+        elif preset == "14d":
+            default_ini, default_fim = data_max - timedelta(days=13), data_max
+        elif preset == "28d":
+            default_ini, default_fim = data_max - timedelta(days=27), data_max
+        elif preset == "30d":
+            default_ini, default_fim = data_max - timedelta(days=29), data_max
         else:
-            col_data, _, _, _ = st.columns(4)
-            with col_data:
-                datas = st.date_input("Período", value=(data_min, data_max),
-                                      min_value=data_min, max_value=data_max)
-            if isinstance(datas, tuple) and len(datas) == 2:
-                d_ini, d_fim = datas
-            else:
-                d_ini, d_fim = data_min, data_max
+            default_ini, default_fim = data_min, data_max
 
-        f1, f2, f3 = st.columns(3)
-        with f1:
+        row2_c1, row2_c2, row2_c3, row2_c4 = st.columns([1.5, 1, 1, 1])
+        with row2_c1:
+            datas = st.date_input("📅 Período personalizado", value=(default_ini, default_fim),
+                                  min_value=data_min, max_value=data_max,
+                                  label_visibility="collapsed")
+        with row2_c2:
             sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
-            sid2_sel  = st.multiselect("Canal (Sub_id2)", sid2_opts, default=[],
-                                       placeholder="Todos os canais")
-        with f2:
+            sid2_sel  = st.multiselect("Canal", sid2_opts, default=[],
+                                       placeholder="Canal (Sub_id2)")
+        with row2_c3:
             sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
             sid1_sel  = st.multiselect("Sub_id1", sid1_opts, default=[],
-                                       placeholder="Todos os Sub_id1")
-        with f3:
+                                       placeholder="Sub_id1")
+        with row2_c4:
             sid3_opts = sorted([x for x in df_raw["Sub_id3"].unique() if x.strip()])
             sid3_sel  = st.multiselect("Sub_id3", sid3_opts, default=[],
-                                       placeholder="Todos os Sub_id3")
+                                       placeholder="Sub_id3")
+
+    if isinstance(datas, tuple) and len(datas) == 2:
+        d_ini, d_fim = datas
+    else:
+        d_ini, d_fim = default_ini, default_fim
 
     # Aplicar filtros — se nada seleccionado, mostrar tudo sem excepção
     mask = (
@@ -779,32 +804,32 @@ def main():
     st.plotly_chart(fig_corr, use_container_width=True)
 
     # ── FUNIL PAGO ──
-    # ── FUNIL PAGO ──
     if m_pago and m_pago["impressoes"] > 0:
         st.markdown('<div class="section-title">🔽 Funil de Conversão (Pago)</div>', unsafe_allow_html=True)
 
         df_pago_ant = df_ant[df_ant["Sub_id2"].str.lower()=="pago"] if not df_ant.empty else pd.DataFrame()
         m_pago_ant  = calcular(df_pago_ant) if not df_pago_ant.empty else None
 
-        # Funil híbrido: gráfico de barras horizontais + CTR por step
         col_funil, col_steps = st.columns([1.2, 1])
 
         with col_funil:
-            funil_labels = ["Impressões","Alcance","Cliques Meta","Vendas"]
-            funil_vals   = [m_pago["impressoes"], m_pago["alcance"],
-                            m_pago["cliques_meta"], m_pago["vendas"]]
-            funil_pcts   = [100,
-                            m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
-                            m_pago["cliques_meta"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
-                            m_pago["vendas"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0]
-
+            # Funil correcto: Impressões no topo, Vendas na base
+            funil_labels = ["Vendas","Cliques Meta","Alcance","Impressões"]
+            funil_vals   = [m_pago["vendas"], m_pago["cliques_meta"],
+                            m_pago["alcance"], m_pago["impressoes"]]
+            funil_pcts   = [
+                m_pago["vendas"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                m_pago["cliques_meta"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
+                100,
+            ]
             fig_funil = go.Figure()
-            cores_funil = ["#bd6d34","#9c5834","#c5936d","#d2b095"]
+            cores_funil = ["#d2b095","#c5936d","#9c5834","#bd6d34"]
             for i, (label, val, pct) in enumerate(zip(funil_labels, funil_vals, funil_pcts)):
                 fig_funil.add_trace(go.Bar(
                     x=[pct], y=[label], orientation="h",
                     marker_color=cores_funil[i],
-                    text=f"{val:,.0f}  ({pct:.1f}%)",
+                    text=f"{val:,.0f}  ({pct:.2f}%)",
                     textposition="inside",
                     name=label, showlegend=False,
                 ))
@@ -816,26 +841,36 @@ def main():
             st.plotly_chart(fig_funil, use_container_width=True)
 
         with col_steps:
+            # Valor inicial do período completo para referência
+            df_pago_all = df_raw[df_raw["Sub_id2"].str.lower()=="pago"]
+            m_pago_all  = calcular(df_pago_all) if not df_pago_all.empty else None
+
             steps_funil = [
                 ("Impressões → Alcance",
                  m_pago["alcance"]/m_pago["impressoes"]*100 if m_pago["impressoes"]>0 else 0,
-                 m_pago_ant["alcance"]/m_pago_ant["impressoes"]*100 if m_pago_ant and m_pago_ant["impressoes"]>0 else None),
+                 m_pago_ant["alcance"]/m_pago_ant["impressoes"]*100 if m_pago_ant and m_pago_ant["impressoes"]>0 else None,
+                 m_pago_all["alcance"]/m_pago_all["impressoes"]*100 if m_pago_all and m_pago_all["impressoes"]>0 else None),
                 ("Alcance → Cliques",
                  m_pago["cliques_meta"]/m_pago["alcance"]*100 if m_pago["alcance"]>0 else 0,
-                 m_pago_ant["cliques_meta"]/m_pago_ant["alcance"]*100 if m_pago_ant and m_pago_ant["alcance"]>0 else None),
+                 m_pago_ant["cliques_meta"]/m_pago_ant["alcance"]*100 if m_pago_ant and m_pago_ant["alcance"]>0 else None,
+                 m_pago_all["cliques_meta"]/m_pago_all["alcance"]*100 if m_pago_all and m_pago_all["alcance"]>0 else None),
                 ("Cliques → Vendas",
                  m_pago["vendas"]/m_pago["cliques_meta"]*100 if m_pago["cliques_meta"]>0 else 0,
-                 m_pago_ant["vendas"]/m_pago_ant["cliques_meta"]*100 if m_pago_ant and m_pago_ant["cliques_meta"]>0 else None),
+                 m_pago_ant["vendas"]/m_pago_ant["cliques_meta"]*100 if m_pago_ant and m_pago_ant["cliques_meta"]>0 else None,
+                 m_pago_all["vendas"]/m_pago_all["cliques_meta"]*100 if m_pago_all and m_pago_all["cliques_meta"]>0 else None),
             ]
-            for label, cur, ant in steps_funil:
+
+            for label, cur, ant, inicial in steps_funil:
+                parts = []
                 if ant is not None:
                     diff = cur - ant
                     sinal = "+" if diff > 0 else ""
                     cor = "#7a9e4e" if diff > 0 else "#c0392b"
                     emoji_t = "📈" if diff > 0 else "📉"
-                    delta_str = f'<span style="color:{cor};font-size:11px;">{emoji_t} {sinal}{diff:.2f}pp vs ant. ({ant:.2f}%)</span>'
-                else:
-                    delta_str = '<span style="color:#c5936d;font-size:11px;">— sem anterior</span>'
+                    parts.append(f'<span style="color:{cor};font-size:10px;">{emoji_t} {sinal}{diff:.2f}pp vs ant.({ant:.2f}%)</span>')
+                if inicial is not None:
+                    parts.append(f'<span style="color:#c5936d;font-size:10px;">📌 Inicial: {inicial:.2f}%</span>')
+                delta_str = "<br>".join(parts) if parts else '<span style="color:#c5936d;font-size:10px;">— sem referência</span>'
                 st.markdown(f"""
                 <div class="metric-card" style="margin-bottom:6px;">
                     <div class="metric-label">{label}</div>
@@ -845,104 +880,95 @@ def main():
 
         st.markdown("")
 
-        # ── ANÁLISE IA CAMPANHA PAGA ──
+        # ── ANÁLISE IA — botão manual ──
         st.markdown('<div class="section-title">🤖 DESTRAVA AI · Análise da Campanha</div>', unsafe_allow_html=True)
-        with st.spinner("Analisando campanha com IA..."):
-            try:
-                api_key = st.secrets.get("anthropic", {}).get("api_key", "")
-                ant_txt = ""
-                if m_pago_ant:
-                    ant_txt = f"""
-Período anterior para comparação:
-- Investimento: R$ {m_pago_ant["invest"]:.2f} | Vendas: {m_pago_ant["vendas"]:.0f} | Comissão: R$ {m_pago_ant["comissao"]:.2f}
-- CPM: R$ {m_pago_ant["cpm_imp"]:.2f} | CPC: R$ {m_pago_ant["cpc"]:.2f} | CAC: R$ {m_pago_ant["cac"]:.2f}
-- CTR Meta: {m_pago_ant["ctr_meta"]:.2f}% | CTR Conversão: {m_pago_ant["ctr_cv"]:.2f}% | Freq: {m_pago_ant["freq"]:.2f}x | ROI: {m_pago_ant["roi"]:.2f}"""
+        st.caption("💡 A análise IA consome créditos — clica apenas quando quiseres uma análise actualizada.")
 
-                prompt = f"""És um especialista em marketing de afiliados Shopee e Meta Ads.
-Analisa os dados abaixo do período {d_ini} a {d_fim} e responde em português do Brasil com emojis.
-Sê directa, prática e accionável. A utilizadora é criadora de conteúdo afiliada.
+        if st.button("🤖 Gerar Análise IA da Campanha", use_container_width=False):
+            with st.spinner("Analisando com IA..."):
+                try:
+                    api_key = st.secrets.get("anthropic", {}).get("api_key", "")
+                    ant_txt = ""
+                    if m_pago_ant:
+                        ant_txt = f"""
+Período anterior: Invest R${m_pago_ant["invest"]:.2f} | Vendas {m_pago_ant["vendas"]:.0f} | Comissão R${m_pago_ant["comissao"]:.2f}
+CPM R${m_pago_ant["cpm_imp"]:.2f} | CPC R${m_pago_ant["cpc"]:.2f} | CAC R${m_pago_ant["cac"]:.2f}
+CTR Meta {m_pago_ant["ctr_meta"]:.2f}% | CTR Conv {m_pago_ant["ctr_cv"]:.2f}% | Freq {m_pago_ant["freq"]:.2f}x | ROI {m_pago_ant["roi"]:.2f}"""
 
-Fornece:
-1. 📊 Diagnóstico geral (2 frases)
-2. ⚠️ 2-3 alertas ou pontos de atenção
-3. ✅ 2-3 acções concretas recomendadas
+                    prompt = f"""És especialista em marketing de afiliados Shopee e Meta Ads.
+Analisa os dados do período {d_ini} a {d_fim} em português do Brasil com emojis. Sê directa e prática.
+
+Fornece: 1. 📊 Diagnóstico (2 frases) 2. ⚠️ 2-3 alertas 3. ✅ 2-3 acções concretas
 
 Dados actuais:
-- Investimento: R$ {m_pago["invest"]:.2f} | Vendas: {m_pago["vendas"]:.0f} | Comissão: R$ {m_pago["comissao"]:.2f}
-- Lucro: R$ {m_pago["comissao"] - m_pago["invest"]:.2f} | ROI: {m_pago["roi"]:.2f}
-- CPM: R$ {m_pago["cpm_imp"]:.2f} | CPC: R$ {m_pago["cpc"]:.2f} | CAC: R$ {m_pago["cac"]:.2f}
-- Freq: {m_pago["freq"]:.2f}x | CTR Meta: {m_pago["ctr_meta"]:.2f}% | CTR Conv: {m_pago["ctr_cv"]:.2f}%
-- Funil: {m_pago["impressoes"]:.0f} imp → {m_pago["alcance"]:.0f} alc → {m_pago["cliques_meta"]:.0f} cliques → {m_pago["vendas"]:.0f} vendas
+Invest R${m_pago["invest"]:.2f} | Vendas {m_pago["vendas"]:.0f} | Comissão R${m_pago["comissao"]:.2f} | Lucro R${m_pago["comissao"]-m_pago["invest"]:.2f} | ROI {m_pago["roi"]:.2f}
+CPM R${m_pago["cpm_imp"]:.2f} | CPC R${m_pago["cpc"]:.2f} | CAC R${m_pago["cac"]:.2f} | Freq {m_pago["freq"]:.2f}x
+CTR Meta {m_pago["ctr_meta"]:.2f}% | CTR Conv {m_pago["ctr_cv"]:.2f}%
+Funil: {m_pago["impressoes"]:.0f} imp → {m_pago["alcance"]:.0f} alc → {m_pago["cliques_meta"]:.0f} cliques → {m_pago["vendas"]:.0f} vendas
 {ant_txt}"""
 
-                resp = requests.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={"Content-Type": "application/json",
-                             "x-api-key": api_key,
-                             "anthropic-version": "2023-06-01"},
-                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 1000,
-                          "messages": [{"role": "user", "content": prompt}]}
-                )
-                resp_json = resp.json()
-                if "error" in resp_json:
-                    raise Exception(f"API Error: {resp_json['error']['message']}")
-                analise = resp_json["content"][0]["text"]
-                st.markdown(f"""
-                <div style="background:linear-gradient(135deg,#1a1210,#221a16);
-                            border-radius:12px; padding:20px; margin-top:12px;
-                            border-left:4px solid #bd6d34; border: 1px solid #3a2c28;">
-                    <div style="color:#bd6d34; font-size:13px; font-weight:700; margin-bottom:12px;">
-                        🤖 DESTRAVA AI · Campanha Paga · {d_ini} a {d_fim}
-                    </div>
-                    <div style="color:#f6e8d8; font-size:14px; line-height:1.8;">
-                        {analise.replace(chr(10), "<br>")}
-                    </div>
-                </div>""", unsafe_allow_html=True)
-            except Exception as e:
-                st.warning(f"Análise IA indisponível: {str(e)}")
+                    resp = requests.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={"Content-Type": "application/json",
+                                 "x-api-key": api_key,
+                                 "anthropic-version": "2023-06-01"},
+                        json={"model": "claude-sonnet-4-20250514", "max_tokens": 1000,
+                              "messages": [{"role": "user", "content": prompt}]}
+                    )
+                    resp_json = resp.json()
+                    if "error" in resp_json:
+                        raise Exception(f"API Error: {resp_json['error']['message']}")
+                    analise = resp_json["content"][0]["text"]
+                    st.markdown(f"""
+                    <div style="background:linear-gradient(135deg,#1a1210,#221a16);
+                                border-radius:12px; padding:20px; margin-top:12px;
+                                border-left:4px solid #bd6d34; border:1px solid #3a2c28;">
+                        <div style="color:#bd6d34; font-size:13px; font-weight:700; margin-bottom:12px;">
+                            🤖 DESTRAVA AI · {d_ini} a {d_fim}
+                        </div>
+                        <div style="color:#f6e8d8; font-size:14px; line-height:1.8;">
+                            {analise.replace(chr(10), "<br>")}
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"Erro IA: {str(e)}")
 
-        # ── ANÁLISE IA GERAL ──
-        st.markdown('<div class="section-title">🤖 DESTRAVA AI · Visão Geral</div>', unsafe_allow_html=True)
-        with st.spinner("Analisando performance geral com IA..."):
-            try:
-                api_key = st.secrets.get("anthropic", {}).get("api_key", "")
-                prompt_geral = f"""És especialista em marketing de afiliados Shopee.
-Analisa o período {d_ini} a {d_fim} e responde em português do Brasil com emojis. Sê prática e directa.
+        if st.button("🤖 Gerar Análise Geral", use_container_width=False):
+            with st.spinner("Analisando performance geral..."):
+                try:
+                    api_key = st.secrets.get("anthropic", {}).get("api_key", "")
+                    prompt_geral = f"""És especialista em afiliados Shopee. Analisa {d_ini} a {d_fim} em português com emojis.
+Fornece: 1 diagnóstico (2 frases), 2 oportunidades, 2 acções.
+Comissão R${m["comissao"]:.2f} | Lucro R${m["lucro_total"]:.2f} | ROI {m["roi"]:.2f} | Vendas {m["vendas"]:.0f} | CTR {m["ctr_shopee"]:.2f}%
+Pago: {m_pago["vendas"] if m_pago else 0:.0f} vendas R${m_pago["comissao"] if m_pago else 0:.2f}
+Orgânico: {m_org["vendas"] if m_org else 0:.0f} vendas R${m_org["comissao"] if m_org else 0:.2f}
+Story: {m_story["vendas"] if m_story else 0:.0f} vendas R${m_story["comissao"] if m_story else 0:.2f}"""
 
-Fornece: 1 diagnóstico geral (2 frases), 2 oportunidades, 2 acções recomendadas.
-
-Dados:
-- Comissão total: R$ {m["comissao"]:.2f} | Lucro: R$ {m["lucro_total"]:.2f} | ROI: {m["roi"]:.2f}
-- Vendas: {m["vendas"]:.0f} | Cliques: {m["cliques"]:.0f} | CTR: {m["ctr_shopee"]:.2f}%
-- Pago: {m_pago["vendas"] if m_pago else 0:.0f} vendas, R$ {m_pago["comissao"] if m_pago else 0:.2f}
-- Orgânico: {m_org["vendas"] if m_org else 0:.0f} vendas, R$ {m_org["comissao"] if m_org else 0:.2f}
-- Story: {m_story["vendas"] if m_story else 0:.0f} vendas, R$ {m_story["comissao"] if m_story else 0:.2f}"""
-
-                resp2 = requests.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={"Content-Type": "application/json",
-                             "x-api-key": api_key,
-                             "anthropic-version": "2023-06-01"},
-                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 800,
-                          "messages": [{"role": "user", "content": prompt_geral}]}
-                )
-                resp_json2 = resp2.json()
-                if "error" in resp_json2:
-                    raise Exception(f"API Error: {resp_json2['error']['message']}")
-                analise2 = resp_json2["content"][0]["text"]
-                st.markdown(f"""
-                <div style="background:linear-gradient(135deg,#1a1210,#221a16);
-                            border-radius:12px; padding:20px; margin-top:12px;
-                            border-left:4px solid #9c5834; border: 1px solid #3a2c28;">
-                    <div style="color:#9c5834; font-size:13px; font-weight:700; margin-bottom:12px;">
-                        🤖 DESTRAVA AI · Visão Geral · {d_ini} a {d_fim}
-                    </div>
-                    <div style="color:#f6e8d8; font-size:14px; line-height:1.8;">
-                        {analise2.replace(chr(10), "<br>")}
-                    </div>
-                </div>""", unsafe_allow_html=True)
-            except Exception as e:
-                st.warning(f"Análise IA indisponível: {str(e)}")
+                    resp2 = requests.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={"Content-Type": "application/json",
+                                 "x-api-key": api_key,
+                                 "anthropic-version": "2023-06-01"},
+                        json={"model": "claude-sonnet-4-20250514", "max_tokens": 800,
+                              "messages": [{"role": "user", "content": prompt_geral}]}
+                    )
+                    resp_json2 = resp2.json()
+                    if "error" in resp_json2:
+                        raise Exception(f"API Error: {resp_json2['error']['message']}")
+                    analise2 = resp_json2["content"][0]["text"]
+                    st.markdown(f"""
+                    <div style="background:linear-gradient(135deg,#1a1210,#221a16);
+                                border-radius:12px; padding:20px; margin-top:12px;
+                                border-left:4px solid #9c5834; border:1px solid #3a2c28;">
+                        <div style="color:#9c5834; font-size:13px; font-weight:700; margin-bottom:12px;">
+                            🤖 DESTRAVA AI · Visão Geral · {d_ini} a {d_fim}
+                        </div>
+                        <div style="color:#f6e8d8; font-size:14px; line-height:1.8;">
+                            {analise2.replace(chr(10), "<br>")}
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"Erro IA: {str(e)}")
 
     # ── EVOLUÇÃO CPM/CPC/CAC ──
     if len(df_pago) > 0:
