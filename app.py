@@ -1105,9 +1105,9 @@ Analisa o período {d_ini} a {d_fim} em português do Brasil com emojis. Sê dir
 A utilizadora é criadora de conteúdo afiliada, não usa termos muito técnicos.
 
 Fornece SEMPRE:
-1. 📊 Diagnóstico (2 frases sobre o que está a acontecer)
-2. ⚠️ 2-3 alertas (o que precisa de atenção)
-3. ✅ 2-3 acções concretas (mesmo que seja "manter o que está a funcionar")
+1. Diagnóstico (2 frases sobre o que está a acontecer)
+2. 2-3 alertas (o que precisa de atenção)
+3. 2-3 acções concretas (mesmo que seja "manter o que está a funcionar")
 
 Dados:
 Invest R${m_pago["invest"]:.2f} | Vendas {m_pago["vendas"]:.0f} | Comissão R${m_pago["comissao"]:.2f} | Lucro R${m_pago["comissao"]-m_pago["invest"]:.2f} | ROI {m_pago["roi"]:.2f}
