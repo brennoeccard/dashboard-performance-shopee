@@ -28,62 +28,72 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background-color: #0f1117; }
+    .main { background-color: #0f0d0b; }
     .metric-card {
-        background: linear-gradient(135deg, #1e2130, #252840);
+        background: linear-gradient(135deg, #1a1210, #221a16);
         border-radius: 12px;
         padding: 16px 20px;
-        border-left: 4px solid #4f8ef7;
+        border-left: 4px solid #bd6d34;
         margin-bottom: 4px;
     }
-    .metric-card.green  { border-left-color: #2ecc71; }
-    .metric-card.red    { border-left-color: #e74c3c; }
-    .metric-card.yellow { border-left-color: #f1c40f; }
-    .metric-card.purple { border-left-color: #9b59b6; }
-    .metric-card.orange { border-left-color: #e67e22; }
-    .metric-label { color: #8892a4; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { color: #ffffff; font-size: 22px; font-weight: 700; margin-top: 4px; }
-    .metric-delta-pos { color: #2ecc71; font-size: 11px; margin-top: 2px; }
-    .metric-delta-neg { color: #e74c3c; font-size: 11px; margin-top: 2px; }
-    .metric-delta-neu { color: #8892a4; font-size: 11px; margin-top: 2px; }
+    .metric-card.green  { border-left-color: #7a9e4e; }
+    .metric-card.red    { border-left-color: #c0392b; }
+    .metric-card.yellow { border-left-color: #d4a017; }
+    .metric-card.purple { border-left-color: #9c5834; }
+    .metric-card.orange { border-left-color: #bd6d34; }
+    .metric-label { color: #c5936d; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-value { color: #f6e8d8; font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .metric-delta-pos { color: #7a9e4e; font-size: 11px; margin-top: 2px; }
+    .metric-delta-neg { color: #c0392b; font-size: 11px; margin-top: 2px; }
+    .metric-delta-neu { color: #c5936d; font-size: 11px; margin-top: 2px; }
     .section-title {
-        color: #ffffff;
+        color: #f6e8d8;
         font-size: 18px;
         font-weight: 600;
         margin: 24px 0 12px 0;
         padding-bottom: 8px;
-        border-bottom: 1px solid #2a2d3e;
+        border-bottom: 1px solid #3a2c28;
     }
     .canal-card {
-        background: linear-gradient(135deg, #1e2130, #252840);
+        background: linear-gradient(135deg, #1a1210, #221a16);
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 8px;
-        border: 1px solid #2a2d3e;
+        border: 1px solid #3a2c28;
     }
-    .canal-title { color: #4f8ef7; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-    .canal-metric { color: #8892a4; font-size: 11px; }
-    .canal-value { color: #ffffff; font-size: 18px; font-weight: 600; }
+    .canal-title { color: #bd6d34; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .canal-metric { color: #c5936d; font-size: 11px; }
+    .canal-value { color: #f6e8d8; font-size: 18px; font-weight: 600; }
     .alert-banner {
-        background: linear-gradient(135deg, #3d1010, #4d1515);
-        border: 1px solid #e74c3c;
+        background: linear-gradient(135deg, #2d1010, #3d1515);
+        border: 1px solid #c0392b;
         border-radius: 8px;
         padding: 12px 16px;
         margin-bottom: 16px;
-        color: #ff6b6b;
+        color: #e74c3c;
         font-weight: 600;
     }
-    .roi-green  { color: #2ecc71; font-size: 22px; font-weight: 700; }
-    .roi-yellow { color: #f1c40f; font-size: 22px; font-weight: 700; }
-    .roi-red    { color: #e74c3c; font-size: 22px; font-weight: 700; }
+    .roi-green  { color: #7a9e4e; font-size: 22px; font-weight: 700; }
+    .roi-yellow { color: #d4a017; font-size: 22px; font-weight: 700; }
+    .roi-red    { color: #c0392b; font-size: 22px; font-weight: 700; }
+    .footer {
+        margin-top: 40px;
+        padding: 20px;
+        border-top: 1px solid #3a2c28;
+        text-align: center;
+        color: #c5936d;
+        font-size: 12px;
+    }
+    .stSelectbox label, .stMultiSelect label, .stDateInput label { color: #c5936d !important; }
+    [data-testid="stSidebar"] { background-color: #110e0c; border-right: 1px solid #3a2c28; }
 </style>
 """, unsafe_allow_html=True)
 
 PLOTLY_THEME = dict(
-    plot_bgcolor="#0f1117",
-    paper_bgcolor="#0f1117",
-    font_color="#8892a4",
-    title_font_color="#ffffff",
+    plot_bgcolor="#0f0d0b",
+    paper_bgcolor="#0f0d0b",
+    font_color="#c5936d",
+    title_font_color="#f6e8d8",
 )
 
 # ─────────────────────────────────────────────
@@ -103,10 +113,12 @@ def check_login():
         with col2:
             st.markdown("<br><br>", unsafe_allow_html=True)
             st.markdown("""
-            <div style='text-align:center; margin-bottom:24px;'>
-                <span style='font-size:48px;'>📊</span>
-                <h2 style='color:#ffffff; margin:8px 0 4px 0;'>Dashboard Performance</h2>
-                <p style='color:#8892a4;'>Shopee Affiliate Analytics</p>
+            <div style='text-align:center; margin-bottom:24px; padding:20px;
+                        background:linear-gradient(135deg,#1a1210,#221a16);
+                        border-radius:16px; border:1px solid #3a2c28;'>
+                <div style='font-size:48px;'>🔓</div>
+                <h2 style='color:#f6e8d8; margin:8px 0 4px 0; font-size:28px;'>DESTRAVA</h2>
+                <p style='color:#bd6d34; margin:0; font-size:13px;'>por Carol Matos · Analytics</p>
             </div>
             """, unsafe_allow_html=True)
             with st.form("login_form"):
@@ -265,12 +277,12 @@ def calcular(df):
         freq=freq, cpm_imp=cpm_imp, cpm_alc=cpm_alc, cpc=cpc, cac=cac,
     )
 
-def sparkline(df_daily, col, color="#4f8ef7"):
+def sparkline(df_daily, col, color="#bd6d34"):
     df14 = df_daily.tail(14)
     fig = go.Figure(go.Scatter(
         x=df14["Data"], y=df14[col],
         mode="lines", line=dict(color=color, width=1.5),
-        fill="tozeroy", fillcolor=color + "33",
+        fill="tozeroy", fillcolor="rgba(189,109,52,0.15)",
     ))
     fig.update_layout(
         height=50, margin=dict(l=0,r=0,t=0,b=0),
@@ -304,7 +316,14 @@ def main():
     if not check_login():
         return
 
-    st.markdown("# 📊 Dashboard de Performance")
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
+        <div>
+            <h1 style="color:#f6e8d8; margin:0; font-size:28px;">📊 Dashboard de Performance</h1>
+            <p style="color:#c5936d; margin:0; font-size:13px;">Destrava · por Carol Matos</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown("---")
 
     with st.spinner("A carregar dados..."):
@@ -388,12 +407,12 @@ def main():
     with c1:
         d = delta_html(m["comissao"], m_ant["comissao"]) if m_ant else ""
         card("Comissão Total", fmt_brl(m["comissao"]), "blue", d,
-             sparkline(df_daily,"Comissao","#4f8ef7"))
+             sparkline(df_daily,"Comissao","#bd6d34"))
     with c2:
         d = delta_html(m["lucro_total"], m_ant["lucro_total"]) if m_ant else ""
         cor = "green" if m["lucro_total"] >= 0 else "red"
         card("Lucro Total", fmt_brl(m["lucro_total"]), cor, d,
-             sparkline(df_daily,"Comissao","#2ecc71"))
+             sparkline(df_daily,"Comissao","#9c5834"))
     with c3:
         roi_val = m["roi"]
         cor_roi = "green" if roi_val > 1 else ("yellow" if roi_val >= 0 else "red")
@@ -401,11 +420,11 @@ def main():
     with c4:
         d = delta_html(m["vendas"], m_ant["vendas"]) if m_ant else ""
         card("Vendas", fmt_num(m["vendas"]), "purple", d,
-             sparkline(df_daily,"Vendas","#9b59b6"))
+             sparkline(df_daily,"Vendas","#c5936d"))
     with c5:
         d = delta_html(m["cliques"], m_ant["cliques"]) if m_ant else ""
         card("Cliques Shopee", fmt_num(m["cliques"]), "yellow", d,
-             sparkline(df_daily,"Cliques","#f1c40f"))
+             sparkline(df_daily,"Cliques","#d2b095"))
     with c6:
         ctr = m["ctr_shopee"]
         card("CTR Shopee", fmt_pct(ctr), "blue")
@@ -521,7 +540,7 @@ def main():
         fig_bar = px.bar(df_canal, x="Sub_id2", y="Comissao",
                          title="Comissão por Canal", color="Sub_id2",
                          text="Comissao",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
+                         color_discrete_sequence=["#bd6d34","#9c5834","#c5936d","#d2b095","#562d1d","#f6e8d8"])
         fig_bar.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
         fig_bar.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -529,7 +548,7 @@ def main():
     with col2:
         fig_pizza = px.pie(df_canal, names="Sub_id2", values="Vendas",
                            title="Distribuição de Vendas por Canal",
-                           color_discrete_sequence=px.colors.qualitative.Set2)
+                           color_discrete_sequence=["#bd6d34","#9c5834","#c5936d","#d2b095","#562d1d","#f6e8d8"])
         fig_pizza.update_traces(textinfo="percent+label")
         fig_pizza.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig_pizza, use_container_width=True)
@@ -549,7 +568,7 @@ def main():
         top5 = df_sid3.nlargest(5,"Comissao")
         fig = px.bar(top5, x="Comissao", y="Sub_id3", orientation="h",
                      title="🏆 Top 5 por Comissão", text="Comissao",
-                     color_discrete_sequence=["#2ecc71"])
+                     color_discrete_sequence=["#9c5834"])
         fig.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
@@ -558,7 +577,7 @@ def main():
         bot5 = df_sid3.nsmallest(5,"Comissao")
         fig = px.bar(bot5, x="Comissao", y="Sub_id3", orientation="h",
                      title="📉 Bottom 5 por Comissão", text="Comissao",
-                     color_discrete_sequence=["#e74c3c"])
+                     color_discrete_sequence=["#562d1d"])
         fig.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
@@ -574,7 +593,7 @@ def main():
         df_sid1, x="Cliques", y="Vendas", color="Sub_id2",
         size="Comissao", hover_name="Sub_id1",
         title="Cliques vs Vendas (tamanho = Comissão)",
-        color_discrete_sequence=px.colors.qualitative.Set2,
+        color_discrete_sequence=["#bd6d34","#9c5834","#c5936d","#d2b095","#562d1d","#f6e8d8"],
         size_max=50,
     )
     fig_scatter.update_traces(textposition="top center")
@@ -624,7 +643,7 @@ def main():
         fig_pago = px.line(df_pd, x="Data", y=metrica_pago,
                            title=f"Evolução de {metrica_pago}",
                            markers=True, text=metrica_pago,
-                           color_discrete_sequence=["#e74c3c"])
+                           color_discrete_sequence=["#562d1d"])
         fig_pago.update_traces(texttemplate="R$ %{text:.2f}", textposition="top center")
         fig_pago.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig_pago, use_container_width=True)
@@ -683,8 +702,13 @@ def main():
         mime="text/html",
     )
 
-    st.markdown("---")
-    st.caption(f"Dados actualizados a cada 5 min · {len(df)} linhas · Período: {d_ini} a {d_fim}")
+    st.markdown("""
+    <div class="footer">
+        🔓 <strong style="color:#bd6d34;">DESTRAVA</strong>
+        <span style="color:#c5936d;"> · por Carol Matos · Analytics Dashboard</span>
+        <br><span style="color:#562d1d; font-size:10px;">Dados actualizados a cada 5 min</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
