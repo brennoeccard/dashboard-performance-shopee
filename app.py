@@ -474,6 +474,13 @@ def main():
         Vendas=("Vendas","sum"), Comissao=("Comissao","sum"),
         Cliques=("Cliques","sum"), Investimento=("Investimento","sum"),
     ).reset_index().sort_values("Data")
+    df_daily["ROI_calc"] = df_daily.apply(
+        lambda r: (r["Comissao"] - r["Investimento"]) / r["Investimento"]
+        if r["Investimento"] > 0 else 0, axis=1
+    )
+    df_daily["CTR_calc"] = df_daily.apply(
+        lambda r: r["Vendas"] / r["Cliques"] * 100 if r["Cliques"] > 0 else 0, axis=1
+    )
 
     # ── ALERTA ROI ──
     if verificar_alerta_roi(df):
@@ -500,7 +507,8 @@ def main():
     with c3:
         roi_val = m["roi"]
         cor_roi = "green" if roi_val > 1 else ("yellow" if roi_val >= 0 else "red")
-        card("ROI", f"{roi_val:.2f}", cor_roi)
+        card("ROI", f"{roi_val:.2f}", cor_roi, "",
+             sparkline(df_daily, "ROI_calc", "#d4a017"))
     with c4:
         d = delta_html(m["vendas"], m_ant["vendas"]) if m_ant else ""
         card("Vendas", fmt_num(m["vendas"]), "purple", d,
@@ -511,27 +519,40 @@ def main():
              sparkline(df_daily,"Cliques","#d2b095"))
     with c6:
         ctr = m["ctr_shopee"]
-        card("CTR Shopee", fmt_pct(ctr), "blue")
+        card("CTR Shopee", fmt_pct(ctr), "blue", "",
+             sparkline(df_daily, "CTR_calc", "#bd6d34"))
 
     # ── KPIs POR CANAL ──
     st.markdown('<div class="section-title">📂 Performance por Canal</div>', unsafe_allow_html=True)
     cc1, cc2, cc3 = st.columns(3)
 
-    def canal_card(col, m_canal, nome, emoji, cor):
+    def canal_card(col, m_canal, m_canal_ant, nome, emoji, cor):
         with col:
             if m_canal:
+                # Trend vs semana anterior
+                def trend(cur, ant):
+                    if not m_canal_ant or ant == 0: return ""
+                    pct = (cur - ant) / abs(ant) * 100
+                    if pct > 0:  return f'<span style="color:#7a9e4e; font-size:11px;">▲ {pct:.1f}%</span>'
+                    elif pct < 0: return f'<span style="color:#c0392b; font-size:11px;">▼ {abs(pct):.1f}%</span>'
+                    return ""
+                ant = m_canal_ant if m_canal_ant else {}
                 st.markdown(f"""
                 <div class="canal-card">
                     <div class="canal-title">{emoji} {nome}</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                         <div><div class="canal-metric">Vendas</div>
-                             <div class="canal-value">{fmt_num(m_canal['vendas'])}</div></div>
+                             <div class="canal-value">{fmt_num(m_canal['vendas'])}</div>
+                             {trend(m_canal['vendas'], ant.get('vendas',0))}</div>
                         <div><div class="canal-metric">Comissão</div>
-                             <div class="canal-value">{fmt_brl(m_canal['comissao'])}</div></div>
+                             <div class="canal-value">{fmt_brl(m_canal['comissao'])}</div>
+                             {trend(m_canal['comissao'], ant.get('comissao',0))}</div>
                         <div><div class="canal-metric">Cliques</div>
-                             <div class="canal-value">{fmt_num(m_canal['cliques'])}</div></div>
+                             <div class="canal-value">{fmt_num(m_canal['cliques'])}</div>
+                             {trend(m_canal['cliques'], ant.get('cliques',0))}</div>
                         <div><div class="canal-metric">CTR</div>
-                             <div class="canal-value">{fmt_pct(m_canal['ctr_shopee'])}</div></div>
+                             <div class="canal-value">{fmt_pct(m_canal['ctr_shopee'])}</div>
+                             {trend(m_canal['ctr_shopee'], ant.get('ctr_shopee',0))}</div>
                     </div>
                 </div>""", unsafe_allow_html=True)
             else:
@@ -541,9 +562,13 @@ def main():
                     <div style="color:#8892a4;">Sem dados no período</div>
                 </div>""", unsafe_allow_html=True)
 
-    canal_card(cc1, m_pago,  "Pago",      "📣", "red")
-    canal_card(cc2, m_org,   "Orgânico",  "🌱", "green")
-    canal_card(cc3, m_story, "Story",     "📖", "purple")
+    m_pago_ant  = calcular(df_ant[df_ant["Sub_id2"].str.lower()=="pago"])  if not df_ant.empty else None
+    m_org_ant   = calcular(df_ant[df_ant["Sub_id2"].str.lower()=="organico"]) if not df_ant.empty else None
+    m_story_ant = calcular(df_ant[df_ant["Sub_id2"].str.lower()=="story"]) if not df_ant.empty else None
+
+    canal_card(cc1, m_pago,  m_pago_ant,  "Pago",      "📣", "red")
+    canal_card(cc2, m_org,   m_org_ant,   "Orgânico",  "🌱", "green")
+    canal_card(cc3, m_story, m_story_ant, "Story",     "📖", "purple")
 
     # ── KPIs CAMPANHA PAGO ──
     if m_pago:
@@ -638,7 +663,7 @@ def main():
         st.plotly_chart(fig_pizza, use_container_width=True)
 
     # ── TOP Sub_id3 ──
-    st.markdown('<div class="section-title">🏷️ Top & Bottom Sub_id3</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🏆 Itens Campeões</div>', unsafe_allow_html=True)
 
     df_sid3 = df[df["Sub_id3"] != ""].groupby("Sub_id3").agg(
         Comissao=("Comissao","sum"),
@@ -649,11 +674,15 @@ def main():
 
     col1, col2 = st.columns(2)
     with col1:
-        top5 = df_sid3.nlargest(5,"Comissao")
+        top5 = df_sid3.nlargest(5,"Comissao").copy()
+        top5["label"] = top5.apply(
+            lambda r: f"R$ {r['Comissao']:,.2f}  |  {r['Vendas']:.0f} vendas  |  CTR {r['CTR']:.1f}%", axis=1
+        )
         fig = px.bar(top5, x="Comissao", y="Sub_id3", orientation="h",
-                     title="🏆 Top 5 por Comissão", text="Comissao",
-                     color_discrete_sequence=["#9c5834"])
-        fig.update_traces(texttemplate="R$ %{text:,.2f}", textposition="outside")
+                     title="🏆 Top 5 por Comissão", text="label",
+                     color_discrete_sequence=["#9c5834"],
+                     hover_data={"Vendas": True, "CTR": ":.2f"})
+        fig.update_traces(textposition="outside")
         fig.update_layout(**PLOTLY_THEME)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -692,14 +721,16 @@ def main():
         Vendas=("Vendas","sum"),
         Comissao=("Comissao","sum"),
     ).reset_index()
+    df_sid1["CTR_pct"] = (df_sid1["Vendas"] / df_sid1["Cliques"] * 100).fillna(0).round(2)
     fig_scatter = px.scatter(
         df_sid1, x="Cliques", y="Vendas", color="Sub_id2",
         size="Comissao", hover_name="Sub_id1",
+        hover_data={"Comissao": ":.2f", "CTR_pct": ":.2f", "Cliques": True, "Vendas": True},
         title="Cliques vs Vendas (tamanho = Comissão)",
         color_discrete_sequence=["#bd6d34","#9c5834","#c5936d","#d2b095","#562d1d","#f6e8d8"],
         size_max=50,
+        labels={"CTR_pct": "CTR (%)", "Comissao": "Comissão (R$)"},
     )
-    fig_scatter.update_traces(textposition="top center")
     fig_scatter.update_layout(**PLOTLY_THEME)
     st.plotly_chart(fig_scatter, use_container_width=True)
 
@@ -800,7 +831,23 @@ def main():
                       "Cliques","Vendas","Comissao","Investimento"]
     df_tabela = df[colunas_tabela].copy()
     df_tabela["Data"] = df_tabela["Data"].dt.strftime("%Y-%m-%d")
-    st.dataframe(df_tabela, use_container_width=True, height=400)
+    df_tabela = df_tabela.sort_values("Comissao", ascending=False).reset_index(drop=True)
+
+    # Search filter
+    busca = st.text_input("🔍 Pesquisar na tabela", placeholder="Ex: pago, 260302fronha...")
+    if busca:
+        mask = df_tabela.apply(lambda row: busca.lower() in str(row).lower(), axis=1)
+        df_tabela = df_tabela[mask]
+
+    st.dataframe(
+        df_tabela.style.format({
+            "Comissao": "R$ {:.2f}",
+            "Investimento": "R$ {:.2f}",
+        }),
+        use_container_width=True,
+        height=400,
+    )
+    st.caption(f"{len(df_tabela)} linhas")
 
     # ── DOWNLOAD PDF ──
     st.markdown('<div class="section-title">📥 Download</div>', unsafe_allow_html=True)
