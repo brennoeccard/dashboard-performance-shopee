@@ -199,9 +199,12 @@ def autenticar():
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def ler_dados():
+    """Le Resultados Shopee: apenas 8 colunas (A:H).
+    Data, Sub_id2, Sub_id1, Sub_id3, Cliques, Vendas, CTR, Comissao.
+    Investimento e metricas de campanha vem de Resultados Pago via merge."""
     service = autenticar()
     resultado = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_NAME}!A1:P").execute()
+        spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_NAME}!A1:H").execute()
     valores = resultado.get("values", [])
     if len(valores) < 2:
         return pd.DataFrame()
@@ -210,20 +213,24 @@ def ler_dados():
     max_cols = len(cabecalho)
     linhas_norm = [l + [""] * (max_cols - len(l)) for l in linhas]
     df = pd.DataFrame(linhas_norm, columns=cabecalho)
-    col_map = {df.columns[0]:"Data", df.columns[1]:"Sub_id2", df.columns[2]:"Sub_id1",
-               df.columns[3]:"Sub_id3", df.columns[4]:"Cliques", df.columns[5]:"Vendas",
-               df.columns[6]:"CTR", df.columns[7]:"Comissao", df.columns[8]:"Investimento",
-               df.columns[9]:"Impressoes", df.columns[10]:"Alcance", df.columns[11]:"Cliques_Meta",
-               df.columns[12]:"CTR_Meta", df.columns[13]:"CTR_Geral",
-               df.columns[14]:"Lucro", df.columns[15]:"ROI"}
+
+    nomes = ["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao"]
+    col_map = {df.columns[i]: nomes[i] for i in range(min(len(df.columns), len(nomes)))}
     df = df.rename(columns=col_map)
+
+    for col in ["Investimento","Impressoes","Alcance","Cliques_Meta"]:
+        df[col] = 0.0
+
     def to_num(col):
+        if col not in df.columns: return pd.Series([0.0]*len(df))
         return pd.to_numeric(
-            df[col].astype(str).str.replace("R\\$","",regex=True).str.replace("%","")
-                   .str.replace("\\.","",regex=True).str.replace(",",".").str.strip(),
+            df[col].astype(str).str.replace("R$","",regex=False).str.replace("%","")
+                   .str.replace(".","",regex=False).str.replace(",",".").str.strip(),
             errors="coerce").fillna(0)
-    for col in ["Cliques","Vendas","Comissao","Investimento","Impressoes","Alcance","Cliques_Meta","Lucro","ROI"]:
+
+    for col in ["Cliques","Vendas","Comissao"]:
         df[col] = to_num(col)
+
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
     df = df.dropna(subset=["Data"])
     df["Sub_id2"] = df["Sub_id2"].fillna("").str.strip()
