@@ -527,17 +527,26 @@ def main():
         df_pago_merge = df_pago_raw.copy()
         df_pago_merge["Data_d"] = df_pago_merge["Data"].dt.date
         df["Data_d"] = df["Data"].dt.date
-        # Merge por Data + Sub_id1 + Sub_id2 + Sub_id3
-        merge_cols = ["Data_d","Sub_id1","Sub_id2","Sub_id3"]
+
+        # Se Sub_id3 vazio no pago, cruzar por Data+Sub_id1+Sub_id2 apenas
+        pago_tem_sid3 = df_pago_merge["Sub_id3"].str.strip().ne("").any()
+        if pago_tem_sid3:
+            merge_cols = ["Data_d","Sub_id1","Sub_id2","Sub_id3"]
+        else:
+            merge_cols = ["Data_d","Sub_id1","Sub_id2"]
+
         df = df.merge(
             df_pago_merge[merge_cols + ["Investimento_p","Impressoes_p","Alcance_p","Cliques_Meta_p"]],
             on=merge_cols, how="left"
         )
-        # Substituir colunas existentes com dados do pago onde disponivel
+        # Preencher colunas com dados do pago onde disponivel
         for col_new, col_old in [("Investimento_p","Investimento"),("Impressoes_p","Impressoes"),
                                   ("Alcance_p","Alcance"),("Cliques_Meta_p","Cliques_Meta")]:
             if col_new in df.columns:
-                df[col_old] = df[col_new].fillna(df[col_old] if col_old in df.columns else 0)
+                if col_old in df.columns:
+                    df[col_old] = df[col_new].fillna(df[col_old])
+                else:
+                    df[col_old] = df[col_new].fillna(0)
                 df.drop(columns=[col_new], inplace=True)
         df.drop(columns=["Data_d"], inplace=True, errors="ignore")
 
