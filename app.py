@@ -223,10 +223,10 @@ def ler_dados():
 
     def to_num(col):
         if col not in df.columns: return pd.Series([0.0]*len(df))
-        return pd.to_numeric(
-            df[col].astype(str).str.replace("R$","",regex=False).str.replace("%","")
-                   .str.replace(".","",regex=False).str.replace(",",".").str.strip(),
-            errors="coerce").fillna(0)
+        s = df[col].astype(str).str.strip()
+        s = s.str.replace("R$","",regex=False).str.replace("%","",regex=False).str.strip()
+        s = s.apply(lambda x: x.replace(".","").replace(",",".") if "," in x else x.replace(",","."))
+        return pd.to_numeric(s, errors="coerce").fillna(0)
 
     for col in ["Cliques","Vendas","Comissao"]:
         df[col] = to_num(col)
@@ -257,11 +257,13 @@ def ler_pago():
 
     def to_num(col):
         if col not in df.columns: return pd.Series([0]*len(df))
-        return pd.to_numeric(
-            df[col].astype(str).str.replace("R$","",regex=False)
-                   .str.replace("%","").str.replace(".","",regex=False)
-                   .str.replace(",",".").str.strip(),
-            errors="coerce").fillna(0)
+        s = df[col].astype(str).str.strip()
+        s = s.str.replace("R$","",regex=False).str.replace("%","",regex=False).str.strip()
+        # Brazilian format: 1.234,56 -> remove thousand sep (.) then replace decimal (,) with .
+        # If value has comma, it's decimal separator: remove dots first, then replace comma
+        # If value has no comma, dots might be decimal: keep as is
+        s = s.apply(lambda x: x.replace(".","").replace(",",".") if "," in x else x.replace(",","."))
+        return pd.to_numeric(s, errors="coerce").fillna(0)
 
     # Map columns flexibly by position or name
     cols = df.columns.tolist()
@@ -296,11 +298,10 @@ def ler_awareness():
 
     def to_num(col):
         if col not in df.columns: return pd.Series([0]*len(df))
-        return pd.to_numeric(
-            df[col].astype(str).str.replace("R$","",regex=False)
-                   .str.replace("%","").str.replace(".","",regex=False)
-                   .str.replace(",",".").str.strip(),
-            errors="coerce").fillna(0)
+        s = df[col].astype(str).str.strip()
+        s = s.str.replace("R$","",regex=False).str.replace("%","",regex=False).str.strip()
+        s = s.apply(lambda x: x.replace(".","").replace(",",".") if "," in x else x.replace(",","."))
+        return pd.to_numeric(s, errors="coerce").fillna(0)
 
     cols = df.columns.tolist()
     df["Investimento_aw"]  = to_num(cols[2]) if len(cols)>2 else 0
