@@ -11,9 +11,11 @@ import numpy as np
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
-SPREADSHEET_ID = "1qhdazuPU5B36vwRyc8Be3h9fgXok1dSuDT8mvMBD2eI"
-SHEET_NAME     = "Resultados Shopee"
-SCOPES         = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SPREADSHEET_ID   = "1qhdazuPU5B36vwRyc8Be3h9fgXok1dSuDT8mvMBD2eI"
+SHEET_NAME       = "Resultados Shopee"
+SHEET_PAGO       = "Resultados Pago"
+SHEET_AWARENESS  = "Resultado Awareness"
+SCOPES           = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 st.set_page_config(
     page_title="Dashboard de Performance",
@@ -229,6 +231,82 @@ def ler_dados():
     df["Sub_id3"] = df["Sub_id3"].fillna("").str.strip()
     return df
 
+@st.cache_data(ttl=300)
+def ler_pago():
+    """Le aba Resultados Pago: Data, Sub_id1, Sub_id2, Sub_id3, Investimento, Impressoes, Alcance, Cliques_Meta."""
+    service = autenticar()
+    resultado = service.spreadsheets().values().get(
+        spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_PAGO}!A1:Z").execute()
+    valores = resultado.get("values", [])
+    if len(valores) < 2:
+        return pd.DataFrame()
+    cabecalho = [str(c).strip() for c in valores[0]]
+    linhas = valores[1:]
+    max_cols = len(cabecalho)
+    linhas_norm = [l + [""] * (max_cols - len(l)) for l in linhas]
+    df = pd.DataFrame(linhas_norm, columns=cabecalho)
+    df["Data"] = pd.to_datetime(df.iloc[:,0], errors="coerce")
+    df = df.dropna(subset=["Data"])
+
+    def to_num(col):
+        if col not in df.columns: return pd.Series([0]*len(df))
+        return pd.to_numeric(
+            df[col].astype(str).str.replace("R$","",regex=False)
+                   .str.replace("%","").str.replace(".","",regex=False)
+                   .str.replace(",",".").str.strip(),
+            errors="coerce").fillna(0)
+
+    # Map columns flexibly by position or name
+    cols = df.columns.tolist()
+    df["Sub_id2"]     = df[cols[1]].astype(str).str.strip() if len(cols)>1 else "pago"
+    df["Sub_id1"]     = df[cols[2]].astype(str).str.strip() if len(cols)>2 else ""
+    df["Sub_id3"]     = df[cols[3]].astype(str).str.strip() if len(cols)>3 else ""
+    df["Investimento_p"] = to_num(cols[4]) if len(cols)>4 else 0
+    df["Impressoes_p"]   = to_num(cols[5]) if len(cols)>5 else 0
+    df["Alcance_p"]      = to_num(cols[6]) if len(cols)>6 else 0
+    df["Cliques_Meta_p"] = to_num(cols[7]) if len(cols)>7 else 0
+
+    return df[["Data","Sub_id1","Sub_id2","Sub_id3",
+               "Investimento_p","Impressoes_p","Alcance_p","Cliques_Meta_p"]]
+
+
+@st.cache_data(ttl=300)
+def ler_awareness():
+    """Le aba Resultado Awareness: Data, Sub_id2=awareness, Investimento, Impressoes, Alcance, Visitas, Seguidores, Comentarios."""
+    service = autenticar()
+    resultado = service.spreadsheets().values().get(
+        spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_AWARENESS}!A1:Z").execute()
+    valores = resultado.get("values", [])
+    if len(valores) < 2:
+        return pd.DataFrame()
+    cabecalho = [str(c).strip() for c in valores[0]]
+    linhas = valores[1:]
+    max_cols = len(cabecalho)
+    linhas_norm = [l + [""] * (max_cols - len(l)) for l in linhas]
+    df = pd.DataFrame(linhas_norm, columns=cabecalho)
+    df["Data"] = pd.to_datetime(df.iloc[:,0], errors="coerce")
+    df = df.dropna(subset=["Data"])
+
+    def to_num(col):
+        if col not in df.columns: return pd.Series([0]*len(df))
+        return pd.to_numeric(
+            df[col].astype(str).str.replace("R$","",regex=False)
+                   .str.replace("%","").str.replace(".","",regex=False)
+                   .str.replace(",",".").str.strip(),
+            errors="coerce").fillna(0)
+
+    cols = df.columns.tolist()
+    df["Investimento_aw"]  = to_num(cols[2]) if len(cols)>2 else 0
+    df["Impressoes_aw"]    = to_num(cols[3]) if len(cols)>3 else 0
+    df["Alcance_aw"]       = to_num(cols[4]) if len(cols)>4 else 0
+    df["Visitas_Perfil"]   = to_num(cols[5]) if len(cols)>5 else 0
+    df["Seguidores"]       = to_num(cols[6]) if len(cols)>6 else 0
+    df["Comentarios"]      = to_num(cols[7]) if len(cols)>7 else 0
+
+    return df[["Data","Investimento_aw","Impressoes_aw","Alcance_aw",
+               "Visitas_Perfil","Seguidores","Comentarios"]]
+
+
 # ─────────────────────────────────────────────
 #  HELPERS
 # ─────────────────────────────────────────────
@@ -335,7 +413,7 @@ def main():
         <a href="#evolucao" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📈 Evolucao Temporal</a>
         <a href="#canais" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📊 Comparacao Canais</a>
         <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🏆 Itens Campeoes</a>
-        <a href="#funil" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔽 Funil de Conversao</a>
+        <a href="#awareness" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📡 Awareness</a><a href="#funil" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔽 Funil de Conversao</a>
         <a href="#metricas-pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📉 Metricas Pago</a>
         <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;margin-bottom:4px;text-align:center;">🤖 Insights IA</a>
         """, unsafe_allow_html=True)
@@ -367,14 +445,16 @@ def main():
         <a href="#evolucao" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📈 Evolucao</a>
         <a href="#canais" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📊 Canais</a>
         <a href="#campeoes" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🏆 Campeoes</a>
-        <a href="#funil" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🔽 Funil</a>
+        <a href="#awareness" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📡 Awareness</a> <a href="#funil" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🔽 Funil</a>
         <a href="#metricas-pago" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">📉 Metricas Pago</a>
         <a href="#ipa" style="color:#c5936d;font-size:11px;text-decoration:none;background:#1a1210;padding:3px 10px;border-radius:20px;border:1px solid #3a2c28;">🎯 IPA</a> <a href="#insights-ia" style="color:#bd6d34;font-size:11px;text-decoration:none;background:#2a1f1a;padding:3px 10px;border-radius:20px;border:1px solid #bd6d34;">🤖 Insights IA</a>
     </div>
     """, unsafe_allow_html=True)
 
     with st.spinner("A carregar dados..."):
-        df_raw = ler_dados()
+        df_raw      = ler_dados()
+        df_pago_raw = ler_pago()
+        df_aw_raw   = ler_awareness()
 
     if df_raw.empty:
         st.error("Sem dados. Verifica a planilha.")
@@ -441,6 +521,32 @@ def main():
     if sid1_sel != sid1_opts: mask = mask & df_raw["Sub_id1"].isin(sid1_sel)
     if sid3_sel != sid3_opts: mask = mask & df_raw["Sub_id3"].isin(sid3_sel)
     df = df_raw[mask].copy()
+
+    # Merge dados de campanha pago (Investimento, Impressoes, Alcance, Cliques_Meta)
+    if not df_pago_raw.empty:
+        df_pago_merge = df_pago_raw.copy()
+        df_pago_merge["Data_d"] = df_pago_merge["Data"].dt.date
+        df["Data_d"] = df["Data"].dt.date
+        # Merge por Data + Sub_id1 + Sub_id2 + Sub_id3
+        merge_cols = ["Data_d","Sub_id1","Sub_id2","Sub_id3"]
+        df = df.merge(
+            df_pago_merge[merge_cols + ["Investimento_p","Impressoes_p","Alcance_p","Cliques_Meta_p"]],
+            on=merge_cols, how="left"
+        )
+        # Substituir colunas existentes com dados do pago onde disponivel
+        for col_new, col_old in [("Investimento_p","Investimento"),("Impressoes_p","Impressoes"),
+                                  ("Alcance_p","Alcance"),("Cliques_Meta_p","Cliques_Meta")]:
+            if col_new in df.columns:
+                df[col_old] = df[col_new].fillna(df[col_old] if col_old in df.columns else 0)
+                df.drop(columns=[col_new], inplace=True)
+        df.drop(columns=["Data_d"], inplace=True, errors="ignore")
+
+    # Filtrar awareness pelo mesmo periodo
+    df_aw = df_aw_raw[
+        (df_aw_raw["Data"].dt.date >= d_ini) &
+        (df_aw_raw["Data"].dt.date <= d_fim)
+    ].copy() if not df_aw_raw.empty else pd.DataFrame()
+
     df_viz = df[df["Sub_id2"].str.strip() != ""].copy()
     df_ant = semana_anterior(df_raw, d_ini, d_fim)
 
@@ -458,6 +564,9 @@ def main():
         st.stop()
 
     m     = calcular(df)
+    # Adicionar investimento awareness ao total
+    invest_aw_total = df_aw["Investimento_aw"].sum() if not df_aw.empty else 0
+    m["invest_total"] = m["invest"] + invest_aw_total
     m_ant = calcular(df_ant) if not df_ant.empty else None
     df_pago  = df[df["Sub_id2"].str.lower()=="pago"]
     df_org   = df[df["Sub_id2"].str.lower()=="organico"]
@@ -497,8 +606,9 @@ def main():
              delta_html(m["lucro_total"], m_ant_v.get("lucro_total",0)),
              sparkline(df_daily,"Comissao","#9c5834"))
     with r1c3:
-        card("Investimento", fmt_brl(m["invest"]), "red",
-             delta_html(m["invest"], m_ant_v.get("invest",0)),
+        invest_label = "Investimento Total" if invest_aw_total > 0 else "Investimento"
+        card(invest_label, fmt_brl(m["invest_total"]), "red",
+             delta_html(m["invest_total"], m_ant_v.get("invest",0) + (df_aw_raw[df_aw_raw["Data"].dt.date < d_ini]["Investimento_aw"].sum() if not df_aw_raw.empty else 0)),
              sparkline(df_daily,"Investimento","#c0392b"))
     with r1c4:
         roi_val = m["roi"]
@@ -697,6 +807,84 @@ def main():
     st.plotly_chart(fig_sc, use_container_width=True)
 
     # ── CORRELACAO ──
+    # ── AWARENESS ──
+    if not df_aw.empty:
+        st.markdown('<div id="awareness" class="section-title">📡 Campanha Awareness</div>', unsafe_allow_html=True)
+
+        # KPIs awareness
+        aw1,aw2,aw3,aw4,aw5 = st.columns(5)
+        invest_aw  = df_aw["Investimento_aw"].sum()
+        imp_aw     = df_aw["Impressoes_aw"].sum()
+        alc_aw     = df_aw["Alcance_aw"].sum()
+        visitas_aw = df_aw["Visitas_Perfil"].sum()
+        segs_aw    = df_aw["Seguidores"].sum()
+        cpm_aw     = (invest_aw / imp_aw * 1000) if imp_aw > 0 else 0
+        cpa_aw     = (invest_aw / visitas_aw) if visitas_aw > 0 else 0
+        freq_aw    = imp_aw / alc_aw if alc_aw > 0 else 0
+
+        with aw1: card("Invest. Awareness", fmt_brl(invest_aw), "red")
+        with aw2: card("Impressoes", fmt_num(int(imp_aw)), "yellow")
+        with aw3: card("Alcance", fmt_num(int(alc_aw)), "blue")
+        with aw4: card("Visitas ao Perfil", fmt_num(int(visitas_aw)), "purple")
+        with aw5: card("Seguidores Ganhos", fmt_num(int(segs_aw)), "green")
+
+        aw6,aw7,aw8,_ = st.columns(4)
+        with aw6: card("CPM Awareness", fmt_brl(cpm_aw), "yellow")
+        with aw7: card("Custo/Visita Perfil", fmt_brl(cpa_aw), "orange")
+        with aw8: card("Frequencia", "{:.2f}x".format(freq_aw), "blue")
+
+        # Evolucao awareness
+        df_aw_daily = df_aw.groupby("Data").agg(
+            Invest=("Investimento_aw","sum"),
+            Impressoes=("Impressoes_aw","sum"),
+            Visitas=("Visitas_Perfil","sum"),
+            Seguidores=("Seguidores","sum"),
+        ).reset_index()
+
+        fig_aw = go.Figure()
+        fig_aw.add_trace(go.Bar(x=df_aw_daily["Data"], y=df_aw_daily["Invest"],
+            name="Investimento", marker_color="#c0392b", opacity=0.7))
+        fig_aw.add_trace(go.Scatter(x=df_aw_daily["Data"], y=df_aw_daily["Visitas"],
+            name="Visitas Perfil", mode="lines+markers", line=dict(color="#bd6d34",width=2),
+            yaxis="y2"))
+        fig_aw.update_layout(
+            title="Awareness: Investimento vs Visitas ao Perfil",
+            yaxis=dict(title="Investimento (R$)", color="#c5936d"),
+            yaxis2=dict(title="Visitas", overlaying="y", side="right", color="#bd6d34"),
+            **PLOTLY_THEME
+        )
+        st.plotly_chart(fig_aw, use_container_width=True)
+
+        # Analise de impacto: awareness D+1 a D+7 vs vendas organico+story
+        st.markdown('<div style="color:#c5936d;font-size:12px;margin-top:8px;">'
+                    '<b style="color:#f6e8d8;">Impacto estimado:</b> correlacao entre invest. awareness e vendas organico+story nos 7 dias seguintes.</div>',
+                    unsafe_allow_html=True)
+
+        df_org_story_daily = df[df["Sub_id2"].str.lower().isin(["organico","story"])].groupby("Data").agg(
+            Vendas=("Vendas","sum"), Comissao=("Comissao","sum")
+        ).reset_index()
+
+        # Shift awareness 3 dias (media da janela 1-7)
+        df_aw_shift = df_aw_daily[["Data","Invest"]].copy()
+        df_aw_shift["Data_shifted"] = df_aw_shift["Data"] + pd.Timedelta(days=3)
+        df_impact = df_org_story_daily.merge(
+            df_aw_shift.rename(columns={"Data_shifted":"Data","Invest":"Invest_aw_lag"}),
+            on="Data", how="left"
+        ).fillna(0)
+
+        if len(df_impact) > 3 and df_impact["Invest_aw_lag"].sum() > 0:
+            corr = df_impact["Invest_aw_lag"].corr(df_impact["Vendas"])
+            cor_txt = "#7a9e4e" if corr > 0.3 else ("#c0392b" if corr < -0.1 else "#c5936d")
+            interp = "correlacao positiva - awareness parece impactar vendas" if corr > 0.3 else (
+                     "sem correlacao clara ainda" if corr >= -0.1 else "correlacao negativa - rever estrategia")
+            st.markdown(
+                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;margin-top:8px;">' +
+                '<span style="color:#c5936d;font-size:11px;">Correlacao Awareness -> Vendas Org/Story (lag 3d): </span>' +
+                '<span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span>'.format(cor_txt, corr) +
+                ' <span style="color:#c5936d;font-size:11px;">— {}</span>'.format(interp) +
+                '</div>',
+                unsafe_allow_html=True)
+
     st.markdown('<div class="section-title">🔗 Matriz de Correlacao</div>', unsafe_allow_html=True)
     df_corr = df_daily[df_daily["Investimento"]>0][["Vendas","Comissao","Cliques","Investimento"]].corr()
     fig_corr = px.imshow(df_corr, text_auto=".2f", title="Correlacao entre Metricas",
