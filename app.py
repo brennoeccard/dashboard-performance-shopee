@@ -553,7 +553,8 @@ def main():
     # Filtrar awareness pelo mesmo periodo
     df_aw = df_aw_raw[
         (df_aw_raw["Data"].dt.date >= d_ini) &
-        (df_aw_raw["Data"].dt.date <= d_fim)
+        (df_aw_raw["Data"].dt.date <= d_fim) &
+        (df_aw_raw["Investimento_aw"] > 0)
     ].copy() if not df_aw_raw.empty else pd.DataFrame()
 
     df_viz = df[df["Sub_id2"].str.strip() != ""].copy()
@@ -617,7 +618,7 @@ def main():
     with r1c3:
         invest_label = "Investimento Total" if invest_aw_total > 0 else "Investimento"
         card(invest_label, fmt_brl(m["invest_total"]), "red",
-             delta_html(m["invest_total"], m_ant_v.get("invest",0) + (df_aw_raw[df_aw_raw["Data"].dt.date < d_ini]["Investimento_aw"].sum() if not df_aw_raw.empty else 0)),
+             delta_html(m["invest_total"], m_ant_v.get("invest",0)),
              sparkline(df_daily,"Investimento","#c0392b"))
     with r1c4:
         roi_val = m["roi"]
@@ -837,10 +838,12 @@ def main():
         with aw4: card("Visitas ao Perfil", fmt_num(int(visitas_aw)), "purple")
         with aw5: card("Seguidores Ganhos", fmt_num(int(segs_aw)), "green")
 
-        aw6,aw7,aw8,_ = st.columns(4)
+        custo_seg = (invest_aw / segs_aw) if segs_aw > 0 else 0
+        aw6,aw7,aw8,aw9 = st.columns(4)
         with aw6: card("CPM Awareness", fmt_brl(cpm_aw), "yellow")
         with aw7: card("Custo/Visita Perfil", fmt_brl(cpa_aw), "orange")
-        with aw8: card("Frequencia", "{:.2f}x".format(freq_aw), "blue")
+        with aw8: card("Custo/Seguidor", fmt_brl(custo_seg), "purple")
+        with aw9: card("Frequencia", "{:.2f}x".format(freq_aw), "blue")
 
         # Evolucao awareness
         df_aw_daily = df_aw.groupby("Data").agg(
