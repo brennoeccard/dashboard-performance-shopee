@@ -215,24 +215,28 @@ def ler_pago():
 
 @st.cache_data(ttl=300)
 def ler_awareness():
-    """Resultado Awareness: Data|Sub_id2|Investimento|Impressoes|Alcance|Visitas_Perfil|Seguidores|Comentarios"""
+    """Resultado Awareness: Data|Sub_id2|Investimento|Impressoes|Alcance|Visitas_Perfil|Seguidores|Comentarios
+    Nota: col0=Data, col1=Sub_id2, col2=Investimento, col3=Impressoes..."""
     svc = autenticar()
     res = svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_AWARENESS}!A1:H").execute()
     vals = res.get("values",[])
     if len(vals)<2: return pd.DataFrame()
     cab=vals[0]; linhas=vals[1:]
-    mc=len(cab); ln=[l+[""]*(mc-len(l)) for l in linhas]
-    df=pd.DataFrame(ln, columns=cab)
+    # Normalizar linhas para ter mesmo numero de colunas
+    mc=max(len(l) for l in [cab]+linhas)
+    ln=[l+[""]*(mc-len(l)) for l in linhas]
+    df=pd.DataFrame(ln, columns=(cab+[""]*(mc-len(cab)))[:mc])
     r=pd.DataFrame()
     r["Data"]           = pd.to_datetime(df.iloc[:,0], errors="coerce")
-    r["Investimento_aw"]= df.iloc[:,2].apply(parse_num) if len(df.columns)>2 else 0.0
-    r["Impressoes_aw"]  = df.iloc[:,3].apply(parse_num) if len(df.columns)>3 else 0.0
-    r["Alcance_aw"]     = df.iloc[:,4].apply(parse_num) if len(df.columns)>4 else 0.0
-    r["Visitas_Perfil"] = df.iloc[:,5].apply(parse_num) if len(df.columns)>5 else 0.0
-    r["Seguidores"]     = df.iloc[:,6].apply(parse_num) if len(df.columns)>6 else 0.0
-    r["Comentarios"]    = df.iloc[:,7].apply(parse_num) if len(df.columns)>7 else 0.0
+    # col1=Sub_id2, col2=Investimento, col3=Impressoes, col4=Alcance, col5=Visitas, col6=Seguidores, col7=Comentarios
+    r["Investimento_aw"]= df.iloc[:,2].apply(parse_num) if df.shape[1]>2 else 0.0
+    r["Impressoes_aw"]  = df.iloc[:,3].apply(parse_num) if df.shape[1]>3 else 0.0
+    r["Alcance_aw"]     = df.iloc[:,4].apply(parse_num) if df.shape[1]>4 else 0.0
+    r["Visitas_Perfil"] = df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
+    r["Seguidores"]     = df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
+    r["Comentarios"]    = df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
     r=r.dropna(subset=["Data"])
-    r=r[r["Investimento_aw"]>0]
+    # Nao filtrar por investimento > 0 aqui - filtrar depois para debug
     return r
 
 # ─────────────────────────────────────────────
@@ -338,14 +342,18 @@ def main():
     if sid3_sel!=sid3_opts: mask=mask&df_raw["Sub_id3"].isin(sid3_sel)
     df=df_raw[mask].copy()
 
-    # MERGE PAGO — por Data+Sub_id1+Sub_id2, deduplicated, sem duplicar investimento
+    # MERGE PAGO — por Data+Sub_id1+Sub_id2
+    # IMPORTANTE: o investimento e diario (1 linha por dia no Resultados Pago)
+    # Nao deve ser somado por linha de venda, apenas 1 vez por dia+sub_id
     if not df_pago_raw.empty:
         df_pm=df_pago_raw.copy()
         df_pm["Data_d"]=df_pm["Data"].dt.date
         df["Data_d"]=df["Data"].dt.date
+        # Agrupar por Data+Sub_id1+Sub_id2 para garantir 1 linha por dia
         df_pm_dd=df_pm.groupby(["Data_d","Sub_id1","Sub_id2"],as_index=False).agg(
             Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),
             Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum"))
+        # Merge com df — cada linha de venda recebe os dados do dia correspondente
         df=df.merge(df_pm_dd,on=["Data_d","Sub_id1","Sub_id2"],how="left")
         for col in ["Investimento","Impressoes","Alcance","Cliques_Meta"]:
             col_y=col+"_y"; col_x=col+"_x"
@@ -356,8 +364,23 @@ def main():
                 df[col]=0.0
         df.drop(columns=["Data_d"],inplace=True,errors="ignore")
 
+    # INVESTIMENTO: cada dia tem multiplas linhas de venda mas 1 investimento
+    # Para KPIs, precisamos da soma DIARIA do investimento, nao por linha
+    # Calcular investimento unico por dia para evitar duplicacao nos KPIs
+    if "Investimento" in df.columns:
+        # Marcar apenas a primeira ocorrencia de cada dia+sub_id1+sub_id2 como tendo investimento
+        # As restantes ficam a 0 para nao somar em duplicado
+        df["_invest_orig"] = df["Investimento"]
+        df["_rank"] = df.groupby([df["Data"].dt.date,"Sub_id1","Sub_id2"]).cumcount()
+        df["Investimento"] = df.apply(lambda r: r["_invest_orig"] if r["_rank"]==0 else 0, axis=1)
+        df.drop(columns=["_invest_orig","_rank"], inplace=True)
+
     # AWARENESS — filtrar periodo
-    df_aw=df_aw_raw[(df_aw_raw["Data"].dt.date>=d_ini)&(df_aw_raw["Data"].dt.date<=d_fim)].copy() if not df_aw_raw.empty else pd.DataFrame()
+    if not df_aw_raw.empty:
+        df_aw=df_aw_raw[(df_aw_raw["Data"].dt.date>=d_ini)&(df_aw_raw["Data"].dt.date<=d_fim)].copy()
+        df_aw=df_aw[df_aw["Investimento_aw"]>0]  # so dias com investimento real
+    else:
+        df_aw=pd.DataFrame()
 
     df_viz=df[df["Sub_id2"].str.strip()!=""].copy()
     df_ant=semana_anterior(df_raw,d_ini,d_fim)
