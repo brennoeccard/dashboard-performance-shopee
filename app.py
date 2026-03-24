@@ -580,19 +580,31 @@ def main():
             interp="correlacao positiva — awareness parece impactar vendas" if corr>0.3 else ("sem correlacao clara ainda" if corr>=-0.1 else "correlacao negativa — rever estrategia")
             st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;margin-top:8px;"><span style="color:#c5936d;font-size:11px;">Correlacao Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:11px;">— {}</span></div>'.format(cor_txt,corr,interp),unsafe_allow_html=True)
     else:
-        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de Awareness para o periodo seleccionado.</div>', unsafe_allow_html=True)
+        total_aw_raw = len(df_aw_raw) if not df_aw_raw.empty else 0
+        msg = "Sem dados de Awareness na aba 'Resultado Awareness'." if total_aw_raw==0 else "Sem dados de Awareness para o periodo seleccionado ({} linhas no total, nenhuma com investimento > 0 neste periodo).".format(total_aw_raw)
+        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format(msg), unsafe_allow_html=True)
 
     # FUNIL
     if m_pago and m_pago["impressoes"]>0:
         st.markdown('<div id="funil" class="section-title">🔽 Funil de Conversao (Pago)</div>', unsafe_allow_html=True)
-        df_pago_all=df_raw[df_raw["Sub_id2"].str.lower()=="pago"]
+        # Para historico completo do pago, usar df ja com merge aplicado (todo o periodo)
+        df_raw_merged = df_raw.copy()
+        for col in ["Investimento","Impressoes","Alcance","Cliques_Meta"]:
+            df_raw_merged[col] = 0.0
         if not df_pago_raw.empty:
-            df_pm2=df_pago_raw.groupby(["Sub_id1","Sub_id2"],as_index=False).agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum"))
-            df_pago_all=df_pago_all.merge(df_pm2,on=["Sub_id1","Sub_id2"],how="left")
-            for col in ["Impressoes","Alcance","Cliques_Meta"]:
-                if col+"_y" in df_pago_all.columns:
-                    df_pago_all[col]=df_pago_all[col+"_y"].fillna(0)
-                    df_pago_all.drop(columns=[c for c in [col+"_x",col+"_y"] if c in df_pago_all.columns],inplace=True)
+            df_pm2=df_pago_raw.groupby(["Sub_id1","Sub_id2"],as_index=False).agg(
+                Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),
+                Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum"))
+            df_raw_merged["Data_d"]=df_raw_merged["Data"].dt.date
+            df_pm2["Data_d"]=None  # sem filtro de data para historico completo
+            # Merge apenas por Sub_id1+Sub_id2
+            df_raw_merged=df_raw_merged.merge(df_pm2[["Sub_id1","Sub_id2","Investimento","Impressoes","Alcance","Cliques_Meta"]],on=["Sub_id1","Sub_id2"],how="left")
+            for col in ["Investimento","Impressoes","Alcance","Cliques_Meta"]:
+                if col+"_y" in df_raw_merged.columns:
+                    df_raw_merged[col]=df_raw_merged[col+"_y"].fillna(0)
+                    df_raw_merged.drop(columns=[c for c in [col+"_x",col+"_y"] if c in df_raw_merged.columns],inplace=True)
+            df_raw_merged.drop(columns=["Data_d"],inplace=True,errors="ignore")
+        df_pago_all=df_raw_merged[df_raw_merged["Sub_id2"].str.lower()=="pago"]
         m_pago_all=calcular(df_pago_all) if not df_pago_all.empty else None
 
         if "modo_ctr" not in st.session_state: st.session_state.modo_ctr="anterior"
