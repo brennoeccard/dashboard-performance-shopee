@@ -364,16 +364,10 @@ def main():
                 df[col]=0.0
         df.drop(columns=["Data_d"],inplace=True,errors="ignore")
 
-    # INVESTIMENTO: cada dia tem multiplas linhas de venda mas 1 investimento
-    # Para KPIs, precisamos da soma DIARIA do investimento, nao por linha
-    # Calcular investimento unico por dia para evitar duplicacao nos KPIs
+    # Investimento: nao usar o merge para calcular - usar df_pago_raw directamente
+    # Zeramos Investimento no df para nao duplicar; o total vem de df_pago_raw
     if "Investimento" in df.columns:
-        # Marcar apenas a primeira ocorrencia de cada dia+sub_id1+sub_id2 como tendo investimento
-        # As restantes ficam a 0 para nao somar em duplicado
-        df["_invest_orig"] = df["Investimento"]
-        df["_rank"] = df.groupby([df["Data"].dt.date,"Sub_id1","Sub_id2"]).cumcount()
-        df["Investimento"] = df.apply(lambda r: r["_invest_orig"] if r["_rank"]==0 else 0, axis=1)
-        df.drop(columns=["_invest_orig","_rank"], inplace=True)
+        df["Investimento"] = 0.0
 
     # AWARENESS — filtrar periodo
     if not df_aw_raw.empty:
@@ -394,6 +388,22 @@ def main():
         st.stop()
 
     m=calcular(df)
+
+    # Investimento correcto: vem do df_pago_raw filtrado por periodo e sub_ids
+    # NAO do df merged (que duplicaria por numero de linhas de venda por dia)
+    if not df_pago_raw.empty:
+        mask_pago = (df_pago_raw["Data"].dt.date>=d_ini) & (df_pago_raw["Data"].dt.date<=d_fim)
+        if sid2_sel!=sid2_opts: mask_pago=mask_pago & df_pago_raw["Sub_id2"].isin(sid2_sel)
+        if sid1_sel!=sid1_opts: mask_pago=mask_pago & df_pago_raw["Sub_id1"].isin(sid1_sel)
+        invest_pago_real = df_pago_raw[mask_pago]["Investimento"].sum()
+    else:
+        invest_pago_real = 0.0
+    m["invest"] = invest_pago_real
+
+    # Recalcular metricas dependentes do investimento
+    m["lucro_total"] = m["comissao"] - m["invest"]
+    m["roi"] = (m["comissao"]-m["invest"])/m["invest"] if m["invest"]>0 else 0
+
     m_ant=calcular(df_ant) if not df_ant.empty else None
     m_ant_v=m_ant if m_ant else {}
 
@@ -407,6 +417,19 @@ def main():
     m_pago  =calcular(df_pago)  if len(df_pago)>0  else None
     m_org   =calcular(df_org)   if len(df_org)>0   else None
     m_story =calcular(df_story) if len(df_story)>0 else None
+
+    # Corrigir investimento do pago directamente do df_pago_raw
+    if m_pago and not df_pago_raw.empty:
+        mask_p=(df_pago_raw["Data"].dt.date>=d_ini)&(df_pago_raw["Data"].dt.date<=d_fim)
+        if sid1_sel!=sid1_opts: mask_p=mask_p&df_pago_raw["Sub_id1"].isin(sid1_sel)
+        invest_p_real=df_pago_raw[mask_p]["Investimento"].sum()
+        m_pago["invest"]=invest_p_real
+        m_pago["lucro_total"]=m_pago["comissao"]-invest_p_real
+        m_pago["roi"]=(m_pago["comissao"]-invest_p_real)/invest_p_real if invest_p_real>0 else 0
+        m_pago["cpm_imp"]=(invest_p_real/m_pago["impressoes"]*1000) if m_pago["impressoes"]>0 else 0
+        m_pago["cpm_alc"]=(invest_p_real/m_pago["alcance"]*1000) if m_pago["alcance"]>0 else 0
+        m_pago["cpc"]=invest_p_real/m_pago["cliques_meta"] if m_pago["cliques_meta"]>0 else 0
+        m_pago["cac"]=invest_p_real/m_pago["vendas"] if m_pago["vendas"]>0 else 0
 
     df_ant_pago =df_ant[df_ant["Sub_id2"].str.lower()=="pago"]  if not df_ant.empty else pd.DataFrame()
     df_ant_org  =df_ant[df_ant["Sub_id2"].str.lower()=="organico"] if not df_ant.empty else pd.DataFrame()
