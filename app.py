@@ -441,10 +441,14 @@ def main():
         # Linha 1: resultados financeiros
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
-        ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),"","purple")
-        ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),"","blue")
+        n_dias_p_ant=len(df_ant_pago["Data"].unique()) if not df_ant_pago.empty else 1
+        vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
+        com_med_a=(mp.get("comissao",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
+        inv_med_a=(mp.get("invest",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
+        ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
+        ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
         ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Ticket Medio",fmt_brl(m_pago["ticket"]),delta_html(m_pago["ticket"],mp.get("ticket",0)),cor_roi)
-        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),"","red")
+        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
         ppair(k5,"ROI","{:.2f}".format(m_pago["roi"]),delta_html(m_pago["roi"],mp.get("roi",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),cor_roi)
 
         # Linha 2: metricas de campanha
@@ -499,6 +503,7 @@ def main():
 
         n_dias_aw=len(df_aw["Data"].unique()) or 1
         inv_aw_med=inv_aw_s/n_dias_aw
+        inv_aw_med_a=(inv_a/len(df_aw_ant["Data"].unique())) if not df_aw_ant.empty and len(df_aw_ant["Data"].unique())>0 else 0
 
         def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
@@ -511,13 +516,14 @@ def main():
                     '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
                     unsafe_allow_html=True)
 
-        aw1,aw2,aw3,aw4=st.columns(4)
-        pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),"","red")
+        aw1,aw2,aw3=st.columns(3)
+        pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
         pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a),"yellow")
         pair(aw3,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a),"purple")
+        aw4,aw5,aw6=st.columns(3)
         pair(aw4,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a),"green")
-        _,aw5,_=st.columns([1.5,1,1.5])
         pair(aw5,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a),"blue")
+        pair(aw6,"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,imp_a/alc_aw if alc_aw>0 else 0),"Alcance",fmt_num(int(alc_aw)),"","orange")
 
         # Grafico awareness
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
@@ -534,24 +540,43 @@ def main():
         st.plotly_chart(dual_chart(df_awf,"Data",da[am1],da[am2],"{} vs {}".format(am1,am2),am1,am2),use_container_width=True)
 
         # Correlacao awareness -> vendas
-        df_os=df[df["Sub_id2"].isin(["organico","story"])].groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
+        df_os=df[df["Sub_id2"].isin(["organico","story"])].copy()
+        df_os["Lucro_os"]=df_os["Comissao"]  # custo zero, lucro = comissao
+        df_os_d=df_os.groupby("Data").agg(Vendas=("Vendas","sum"),Lucro_os=("Lucro_os","sum")).reset_index()
         df_aw_s2=df_aw_d[["Data","Invest"]].copy(); df_aw_s2["Data"]=df_aw_s2["Data"]+pd.Timedelta(days=3)
-        df_imp=df_os.merge(df_aw_s2.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
+        df_imp=df_os_d.merge(df_aw_s2.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
         if len(df_imp)>3 and df_imp["Invest_lag"].sum()>0:
-            corr=df_imp["Invest_lag"].corr(df_imp["Vendas"])
-            cor_txt="#7a9e4e" if corr>0.3 else ("#c0392b" if corr<-0.1 else "#c5936d")
-            interp="correlacao positiva" if corr>0.3 else ("sem correlacao clara" if corr>=-0.1 else "correlacao negativa")
-            st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;margin:8px 0;"><span style="color:#c5936d;font-size:11px;">Correlacao Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:11px;">— {}</span></div>'.format(cor_txt,corr,interp),unsafe_allow_html=True)
+            corr_v=df_imp["Invest_lag"].corr(df_imp["Vendas"])
+            corr_l=df_imp["Invest_lag"].corr(df_imp["Lucro_os"])
+            aw_t=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
+            def corr_badge(c):
+                cor="#7a9e4e" if c>0.3 else ("#c0392b" if c<-0.1 else "#c5936d")
+                txt="positiva" if c>0.3 else ("sem correlacao" if c>=-0.1 else "negativa")
+                return cor,txt
+            cv_cor,cv_txt=corr_badge(corr_v); cl_cor,cl_txt=corr_badge(corr_l)
+            st.markdown(
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;">'
+                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;">'
+                '<span style="color:#c5936d;font-size:11px;">Awareness -> Vendas Org/Story (lag 3d): </span>'
+                '<span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span>'
+                ' <span style="color:#c5936d;font-size:10px;">— {}</span></div>'
+                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;">'
+                '<span style="color:#c5936d;font-size:11px;">Awareness -> Lucro Org/Story (lag 3d): </span>'
+                '<span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span>'
+                ' <span style="color:#c5936d;font-size:10px;">— {}</span></div>'
+                '</div>'.format(cv_cor,corr_v,cv_txt,cl_cor,corr_l,cl_txt),
+                unsafe_allow_html=True)
             if len(df_imp)>=7:
-                df_imp["corr_mm"]=df_imp["Invest_lag"].rolling(7,min_periods=3).corr(df_imp["Vendas"])
-                df_ic=df_imp.dropna(subset=["corr_mm"])
+                df_imp["corr_v_mm"]=df_imp["Invest_lag"].rolling(7,min_periods=3).corr(df_imp["Vendas"])
+                df_imp["corr_l_mm"]=df_imp["Invest_lag"].rolling(7,min_periods=3).corr(df_imp["Lucro_os"])
+                df_ic=df_imp.dropna(subset=["corr_v_mm"])
                 if not df_ic.empty:
-                    aw_t=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
                     fig_ct=go.Figure()
-                    fig_ct.add_trace(go.Scatter(x=df_ic["Data"],y=df_ic["corr_mm"],mode="lines+markers",line=dict(color="#bd6d34",width=2),fill="tozeroy",fillcolor="rgba(189,109,52,0.1)",name="Correlacao MM7"))
+                    fig_ct.add_trace(go.Scatter(x=df_ic["Data"],y=df_ic["corr_v_mm"],mode="lines+markers",line=dict(color="#bd6d34",width=2),name="Awareness -> Vendas"))
+                    fig_ct.add_trace(go.Scatter(x=df_ic["Data"],y=df_ic["corr_l_mm"],mode="lines+markers",line=dict(color="#9c5834",width=2,dash="dash"),name="Awareness -> Lucro"))
                     fig_ct.add_hline(y=0.3,line_dash="dash",line_color="#7a9e4e",annotation_text="Positiva (0.3)")
                     fig_ct.add_hline(y=0,line_dash="dot",line_color="#c5936d")
-                    fig_ct.update_layout(title="Tendencia de Correlacao Awareness -> Vendas (janela 7d)",yaxis=dict(title="Correlacao",color="#c5936d",gridcolor="#2a1f1a"),**aw_t)
+                    fig_ct.update_layout(title="Tendencia de Correlacao Awareness (janela 7d)",yaxis=dict(title="Correlacao",color="#c5936d",gridcolor="#2a1f1a"),**aw_t)
                     st.plotly_chart(fig_ct,use_container_width=True)
     else:
         n=len(df_aw_raw) if not df_aw_raw.empty else 0
