@@ -70,13 +70,16 @@ def card(label,value,color="blue",delta_html_str="",sparkline_fig=None):
 def delta_html(val,ref,inverted=False):
     """inverted=True para metricas onde queda e boa (CPM, CPC, CAC, custos)"""
     if ref is None or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
-    if ref<0 and val>0: return '<span class="metric-delta-pos">▲ positivo (ant. negativo)</span>'
-    if ref>0 and val<0: return '<span class="metric-delta-neg">▼ negativo (ant. positivo)</span>'
-    if ref<0 and val<=0:
+    # Sempre calcular pct mesmo com sinais diferentes
+    if ref<0 and val>=0:
+        # De negativo para positivo = melhoria - mostrar como +X%
         pct=(val-ref)/abs(ref)*100
-        if val>ref: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-        elif val<ref: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-        return '<span class="metric-delta-neu">= igual semana ant.</span>'
+        if not inverted: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        else: return '<span class="metric-delta-neg">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+    if ref>0 and val<0:
+        pct=(val-ref)/abs(ref)*100
+        if not inverted: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        else: return '<span class="metric-delta-pos">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
     pct=(val-ref)/abs(ref)*100
     if inverted:
         if pct<0: return '<span class="metric-delta-pos">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
@@ -328,10 +331,11 @@ def main():
     invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
     invest_total=invest_pago+invest_aw
 
+    # Definir periodo anterior (sempre, independente de pago/awareness)
+    _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
+    _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
     # Periodo anterior para investimento
     if not df_pago_raw.empty:
-        _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
-        _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
         _pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]
         invest_pago_ant=_pago_ant["Investimento"].sum()
     else:
@@ -342,7 +346,6 @@ def main():
     else:
         invest_aw_ant=0.0
     invest_total_ant=invest_pago_ant+invest_aw_ant
-    st.sidebar.info(f"DEBUG: inv_pago_ant={invest_pago_ant:.1f} inv_aw_ant={invest_aw_ant:.1f} inv_total_ant={invest_total_ant:.1f} comissao_ant={mv.get('comissao',0):.1f}")
 
     m=calcular(df)
     m["invest"]=invest_pago
@@ -410,7 +413,9 @@ def main():
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    lucro_ant=(mv.get("comissao",0)-invest_total_ant) if invest_pago_ant>0 else None
+    # lucro_ant = comissao total anterior - investimento total anterior
+    comissao_total_ant=mv.get("comissao",0)  # todas as fontes
+    lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
     with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
