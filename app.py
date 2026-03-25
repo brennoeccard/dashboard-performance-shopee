@@ -342,6 +342,7 @@ def main():
     else:
         invest_aw_ant=0.0
     invest_total_ant=invest_pago_ant+invest_aw_ant
+    st.sidebar.info(f"DEBUG: inv_pago_ant={invest_pago_ant:.1f} inv_aw_ant={invest_aw_ant:.1f} inv_total_ant={invest_total_ant:.1f} comissao_ant={mv.get('comissao',0):.1f}")
 
     m=calcular(df)
     m["invest"]=invest_pago
@@ -835,4 +836,3 @@ def main():
 
 if __name__=="__main__":
     main()
-    
