@@ -319,16 +319,17 @@ def main():
     # CALCULAR METRICAS
     # Investimento vem SEMPRE do df_pago_raw (nunca do df merged)
     invest_pago=df_pago_periodo["Investimento"].sum() if not df_pago_periodo.empty else 0.0
-    invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
+    # Awareness: usar SEMPRE o total acumulado (df_aw_raw), nao apenas o periodo filtrado
+    invest_aw=df_aw_raw["Investimento_aw"].sum() if not df_aw_raw.empty else 0.0
     invest_total=invest_pago+invest_aw
 
     # Metricas de vendas/comissao do df (Resultados Shopee)
     m=calcular(df)
     # Substituir investimento pelo valor real do df_pago_raw
     m["invest"]=invest_pago
-    m["lucro_total"]=m["comissao"]-invest_pago
-    m["roi"]=(m["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
     m["invest_total"]=invest_total
+    m["lucro_total"]=m["comissao"]-invest_total
+    m["roi"]=(m["comissao"]-invest_total)/invest_total if invest_total>0 else 0
 
     # Metricas para o funil (Impressoes/Alcance/Cliques_Meta vem do df_pago_raw)
     if not df_pago_periodo.empty:
@@ -384,11 +385,19 @@ def main():
     df_daily["CTR_calc"]=df_daily.apply(lambda r:r["Vendas"]/r["Cliques"]*100 if r["Cliques"]>0 else 0,axis=1)
     # Investimento diario do pago_raw
     if not df_pago_periodo.empty:
-        inv_daily=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum")).reset_index()
+        inv_daily=df_pago_periodo.groupby("Data").agg(Invest_pago=("Investimento","sum")).reset_index()
         df_daily=df_daily.merge(inv_daily,on="Data",how="left")
-        df_daily["Investimento"]=df_daily["Investimento"].fillna(0)
+        df_daily["Invest_pago"]=df_daily["Invest_pago"].fillna(0)
     else:
-        df_daily["Investimento"]=0.0
+        df_daily["Invest_pago"]=0.0
+    # Awareness diario (para sparkline e grafico de correlacao)
+    if not df_aw.empty:
+        inv_aw_daily=df_aw.groupby("Data").agg(Invest_aw=("Investimento_aw","sum")).reset_index()
+        df_daily=df_daily.merge(inv_aw_daily,on="Data",how="left")
+        df_daily["Invest_aw"]=df_daily["Invest_aw"].fillna(0)
+    else:
+        df_daily["Invest_aw"]=0.0
+    df_daily["Investimento"]=df_daily["Invest_pago"]+df_daily["Invest_aw"]
     df_daily["ROI_calc"]=df_daily.apply(lambda r:(r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0,axis=1)
 
     # KPIs GERAIS
@@ -466,43 +475,59 @@ def main():
         cpa_aw=(inv_aw/vis_aw) if vis_aw>0 else 0
         cps_aw=(inv_aw/seg_aw) if seg_aw>0 else 0
         freq_aw=imp_aw/alc_aw if alc_aw>0 else 0
-        aw1,aw2,aw3,aw4,aw5=st.columns(5)
-        with aw1: card("Invest. Awareness",fmt_brl(inv_aw),"red")
+        com_aw=df_aw["Comentarios"].sum() if "Comentarios" in df_aw.columns else 0
+        cpc_aw=(inv_aw/com_aw) if com_aw>0 else 0
+        # Periodo anterior awareness
+        df_aw_ant=semana_anterior(df_aw_raw,d_ini,d_fim) if not df_aw_raw.empty else pd.DataFrame()
+        inv_aw_ant=df_aw_ant["Investimento_aw"].sum() if not df_aw_ant.empty else 0
+        vis_aw_ant=df_aw_ant["Visitas_Perfil"].sum() if not df_aw_ant.empty else 0
+        seg_aw_ant=df_aw_ant["Seguidores"].sum() if not df_aw_ant.empty else 0
+        com_aw_ant=df_aw_ant["Comentarios"].sum() if not df_aw_ant.empty else 0
+
+        aw1,aw2,aw3,aw4=st.columns(4)
+        with aw1: card("Invest. Awareness",fmt_brl(inv_aw),"red",delta_html(inv_aw,inv_aw_ant))
         with aw2: card("Impressoes",fmt_num(int(imp_aw)),"yellow")
-        with aw3: card("Alcance",fmt_num(int(alc_aw)),"blue")
-        with aw4: card("Visitas ao Perfil",fmt_num(int(vis_aw)),"purple")
-        with aw5: card("Seguidores Ganhos",fmt_num(int(seg_aw)),"green")
-        aw6,aw7,aw8,aw9=st.columns(4)
-        with aw6: card("CPM Awareness",fmt_brl(cpm_aw),"yellow")
+        with aw3: card("Visitas ao Perfil",fmt_num(int(vis_aw)),"purple",delta_html(vis_aw,vis_aw_ant))
+        with aw4: card("Seguidores Ganhos",fmt_num(int(seg_aw)),"green",delta_html(seg_aw,seg_aw_ant))
+        aw5,aw6,aw7,aw8=st.columns(4)
+        with aw5: card("Comentarios",fmt_num(int(com_aw)),"blue",delta_html(com_aw,com_aw_ant))
+        with aw6: card("CPM",fmt_brl(cpm_aw),"yellow")
         with aw7: card("Custo/Visita",fmt_brl(cpa_aw),"orange")
         with aw8: card("Custo/Seguidor",fmt_brl(cps_aw),"purple")
-        with aw9: card("Frequencia","{:.2f}x".format(freq_aw),"blue")
         df_aw_d=df_aw.groupby("Data").agg(
             Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),
-            Alcance=("Alcance_aw","sum"),Visitas=("Visitas_Perfil","sum"),
-            Seguidores=("Seguidores","sum")).reset_index()
+            Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),
+            Comentarios=("Comentarios","sum")).reset_index()
         df_aw_d["CPM"]=(df_aw_d["Invest"]/df_aw_d["Impressoes"]*1000).replace([np.inf,np.nan],0)
         df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
         df_aw_d["CPS"]=(df_aw_d["Invest"]/df_aw_d["Seguidores"]).replace([np.inf,np.nan],0)
+        df_aw_d["CPC_aw"]=(df_aw_d["Invest"]/df_aw_d["Comentarios"]).replace([np.inf,np.nan],0)
 
         metricas_aw = {
-            "Visitas ao Perfil": ("Invest","CPA","Investimento (R$)","Custo/Visita (R$)","#bd6d34"),
-            "Impressoes": ("Invest","CPM","Investimento (R$)","CPM (R$)","#c5936d"),
-            "Seguidores": ("Invest","CPS","Investimento (R$)","Custo/Seguidor (R$)","#9c5834"),
-            "Alcance": ("Invest","Alcance","Investimento (R$)","Alcance","#d2b095"),
+            "Visitas ao Perfil": ("Invest","Visitas","CPA","Investimento (R$)","Visitas","Custo/Visita (R$)","#bd6d34"),
+            "Impressoes": ("Invest","Impressoes","CPM","Investimento (R$)","Impressoes","CPM (R$)","#c5936d"),
+            "Seguidores": ("Invest","Seguidores","CPS","Investimento (R$)","Seguidores","Custo/Seguidor (R$)","#9c5834"),
+            "Comentarios": ("Invest","Comentarios","CPC_aw","Investimento (R$)","Comentarios","Custo/Comentario (R$)","#d2b095"),
         }
         met_aw=st.selectbox("Metrica Awareness",list(metricas_aw.keys()),key="sel_aw")
-        col_bar,col_line,y1_title,y2_title,cor=metricas_aw[met_aw]
-        fig=go.Figure()
-        fig.add_trace(go.Bar(x=df_aw_d["Data"],y=df_aw_d[col_bar],name="Investimento",marker_color="#c0392b",opacity=0.7))
-        fig.add_trace(go.Scatter(x=df_aw_d["Data"],y=df_aw_d[col_line],name=met_aw,mode="lines+markers",line=dict(color=cor,width=2),yaxis="y2"))
+        col_bar,col_vol,col_custo,y1_title,y2_vol,y2_custo,cor=metricas_aw[met_aw]
         aw_theme=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
             legend=dict(font=dict(color="#f6e8d8",size=12),bgcolor="rgba(30,18,16,0.8)"))
-        fig.update_layout(title="Awareness: Investimento vs {}".format(met_aw),
-            yaxis=dict(title=y1_title,color="#c5936d",gridcolor="#2a1f1a"),
-            yaxis2=dict(title=y2_title,overlaying="y",side="right",color=cor),
-            **aw_theme)
-        st.plotly_chart(fig,use_container_width=True)
+        caw1,caw2=st.columns(2)
+        with caw1:
+            fig=go.Figure()
+            fig.add_trace(go.Bar(x=df_aw_d["Data"],y=df_aw_d[col_bar],name="Investimento",marker_color="#c0392b",opacity=0.7))
+            fig.add_trace(go.Scatter(x=df_aw_d["Data"],y=df_aw_d[col_vol],name=met_aw,mode="lines+markers",line=dict(color=cor,width=2),yaxis="y2"))
+            fig.update_layout(title="Investimento vs {}".format(met_aw),
+                yaxis=dict(title=y1_title,color="#c5936d",gridcolor="#2a1f1a"),
+                yaxis2=dict(title=y2_vol,overlaying="y",side="right",color=cor),**aw_theme)
+            st.plotly_chart(fig,use_container_width=True)
+        with caw2:
+            fig2=go.Figure()
+            fig2.add_trace(go.Scatter(x=df_aw_d["Data"],y=df_aw_d[col_custo],name=y2_custo,mode="lines+markers",line=dict(color=cor,width=2),fill="tozeroy",fillcolor="rgba(189,109,52,0.15)"))
+            fig2.update_layout(title="{} ao longo do tempo".format(y2_custo),
+                yaxis=dict(title=y2_custo,color="#c5936d",gridcolor="#2a1f1a"),**aw_theme)
+            st.plotly_chart(fig2,use_container_width=True)
         df_os=df[df["Sub_id2"].str.lower().isin(["organico","story"])].groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
         df_aw_s=df_aw_d[["Data","Invest"]].copy()
         df_aw_s["Data"]=df_aw_s["Data"]+pd.Timedelta(days=3)
@@ -579,12 +604,43 @@ def main():
         title="Cliques vs Vendas",color_discrete_sequence=["#bd6d34","#9c5834","#c5936d"],size_max=50)
     fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
-    # CORRELACAO
-    st.markdown('<div class="section-title">🔗 Matriz de Correlacao</div>',unsafe_allow_html=True)
-    df_corr=df_daily[df_daily["Investimento"]>0][["Vendas","Comissao","Cliques","Investimento"]].corr()
-    if not df_corr.empty:
-        fig=px.imshow(df_corr,text_auto=".2f",title="Correlacao (dias com investimento)",color_continuous_scale="RdBu_r",zmin=-1,zmax=1)
-        fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
+    # GRAFICO CRUZAMENTO LIVRE
+    st.markdown('<div class="section-title">🔀 Cruzamento de Metricas</div>',unsafe_allow_html=True)
+    # Preparar dados diarios completos para cruzamento
+    df_cross=df_daily.copy()
+    if not df_aw.empty:
+        df_aw_cross=df_aw.groupby("Data").agg(Invest_aw=("Investimento_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
+        df_cross=df_cross.merge(df_aw_cross,on="Data",how="left").fillna(0)
+    else:
+        for c in ["Invest_aw","Visitas","Seguidores","Comentarios"]: df_cross[c]=0.0
+
+    opcoes_cross = {
+        "Invest. Awareness vs Vendas Org/Story": ("Invest_aw","Vendas","#bd6d34"),
+        "Invest. Total vs Vendas": ("Investimento","Vendas","#c5936d"),
+        "Invest. Total vs Comissao": ("Investimento","Comissao","#9c5834"),
+        "Invest. Pago vs Comissao": ("Invest_pago","Comissao","#bd6d34"),
+        "Invest. Pago vs Vendas": ("Invest_pago","Vendas","#d2b095"),
+        "Invest. Awareness vs Visitas Perfil": ("Invest_aw","Visitas","#c5936d"),
+        "Invest. Awareness vs Seguidores": ("Invest_aw","Seguidores","#9c5834"),
+        "Invest. Awareness vs Comentarios": ("Invest_aw","Comentarios","#bd6d34"),
+        "Cliques Shopee vs Vendas": ("Cliques","Vendas","#c5936d"),
+        "Cliques Shopee vs Comissao": ("Cliques","Comissao","#d2b095"),
+        "Ticket Medio vs Vendas": ("Ticket_Medio","Vendas","#bd6d34"),
+    }
+    cross_sel=st.selectbox("Seleccionar cruzamento",list(opcoes_cross.keys()),key="sel_cross")
+    col_x,col_y,cor_cross=opcoes_cross[cross_sel]
+    if col_x in df_cross.columns and col_y in df_cross.columns:
+        df_cross_f=df_cross[(df_cross[col_x]>0)|(df_cross[col_y]>0)]
+        fig=go.Figure()
+        fig.add_trace(go.Bar(x=df_cross_f["Data"],y=df_cross_f[col_x],name=col_x.replace("_"," "),marker_color="#c0392b",opacity=0.6))
+        fig.add_trace(go.Scatter(x=df_cross_f["Data"],y=df_cross_f[col_y],name=col_y.replace("_"," "),mode="lines+markers",line=dict(color=cor_cross,width=2),yaxis="y2"))
+        cross_theme=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+            legend=dict(font=dict(color="#f6e8d8",size=12),bgcolor="rgba(30,18,16,0.8)"))
+        fig.update_layout(title=cross_sel,hovermode="x unified",
+            yaxis=dict(title=col_x.replace("_"," "),color="#c5936d",gridcolor="#2a1f1a"),
+            yaxis2=dict(title=col_y.replace("_"," "),overlaying="y",side="right",color=cor_cross),
+            **cross_theme)
+        st.plotly_chart(fig,use_container_width=True)
 
 
     # FUNIL
@@ -627,16 +683,42 @@ def main():
 
     # METRICAS PAGO
     if not df_pago_periodo.empty:
-        st.markdown('<div id="metricas-pago" class="section-title">📉 Evolucao Metricas Pago</div>',unsafe_allow_html=True)
+        st.markdown('<div id="metricas-pago" class="section-title">📉 Metricas Pago</div>',unsafe_allow_html=True)
         df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
-        df_pd_v=df_pago_v.groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
+        df_pd_v=df_pago_v.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum")).reset_index()
         df_pd=df_pd.merge(df_pd_v,on="Data",how="left").fillna(0)
-        df_pd["CPM_Imp"]=(df_pd["Investimento"]/df_pd["Impressoes"]*1000).replace([np.inf,np.nan],0)
+        df_pd["CPM"]=(df_pd["Investimento"]/df_pd["Impressoes"]*1000).replace([np.inf,np.nan],0)
         df_pd["CPC"]=(df_pd["Investimento"]/df_pd["Cliques_Meta"]).replace([np.inf,np.nan],0)
         df_pd["CAC"]=(df_pd["Investimento"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
-        met=st.selectbox("Metrica",["CPM_Imp","CPC","CAC"])
-        fig=px.line(df_pd,x="Data",y=met,title="Evolucao de {}".format(met),markers=True,text=met,color_discrete_sequence=["#bd6d34"])
-        fig.update_traces(texttemplate="R$ %{text:.2f}",textposition="top center"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
+        df_pd["CTR_Meta"]=(df_pd["Cliques_Meta"]/df_pd["Alcance"]*100).replace([np.inf,np.nan],0)
+
+        metricas_pago_sel = {
+            "Impressoes vs CPM": ("Investimento","Impressoes","CPM","Investimento (R$)","Impressoes","CPM (R$)","#c5936d"),
+            "Cliques vs CPC": ("Investimento","Cliques_Meta","CPC","Investimento (R$)","Cliques","CPC (R$)","#bd6d34"),
+            "Vendas vs CAC": ("Investimento","Vendas","CAC","Investimento (R$)","Vendas","CAC (R$)","#9c5834"),
+            "Alcance vs CTR Meta": ("Investimento","Alcance","CTR_Meta","Investimento (R$)","Alcance","CTR Meta (%)","#d2b095"),
+        }
+        met_pago_sel=st.selectbox("Metrica Pago",list(metricas_pago_sel.keys()),key="sel_mp")
+        col_bar_p,col_vol_p,col_custo_p,y1p,y2vp,y2cp,cor_p=metricas_pago_sel[met_pago_sel]
+        pago_theme=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+            legend=dict(font=dict(color="#f6e8d8",size=12),bgcolor="rgba(30,18,16,0.8)"))
+        cp1,cp2=st.columns(2)
+        with cp1:
+            fig=go.Figure()
+            fig.add_trace(go.Bar(x=df_pd["Data"],y=df_pd[col_bar_p],name="Investimento",marker_color="#c0392b",opacity=0.7))
+            fig.add_trace(go.Scatter(x=df_pd["Data"],y=df_pd[col_vol_p],name=col_vol_p,mode="lines+markers",line=dict(color=cor_p,width=2),yaxis="y2"))
+            fig.update_layout(title="Investimento vs {}".format(col_vol_p),
+                yaxis=dict(title=y1p,color="#c5936d",gridcolor="#2a1f1a"),
+                yaxis2=dict(title=y2vp,overlaying="y",side="right",color=cor_p),**pago_theme)
+            st.plotly_chart(fig,use_container_width=True)
+        with cp2:
+            fig2=go.Figure()
+            fig2.add_trace(go.Scatter(x=df_pd["Data"],y=df_pd[col_custo_p],name=y2cp,mode="lines+markers",line=dict(color=cor_p,width=2),fill="tozeroy",fillcolor="rgba(189,109,52,0.15)"))
+            fig2.update_layout(title="{} ao longo do tempo".format(y2cp),
+                yaxis=dict(title=y2cp,color="#c5936d",gridcolor="#2a1f1a"),**pago_theme)
+            st.plotly_chart(fig2,use_container_width=True)
+
+    # METRICAS AWARENESS
 
     # IPA
     st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>',unsafe_allow_html=True)
