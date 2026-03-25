@@ -156,7 +156,7 @@ def ler_pago():
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=(cab+["_"]*mc)[:mc])
     r=pd.DataFrame()
-    r["Data"]=pd.to_datetime(df.iloc[:,0],errors="coerce")
+    r["Data"]=pd.to_datetime(df.iloc[:,0],dayfirst=True,errors="coerce")
     r["Sub_id2"]=df.iloc[:,1].astype(str).str.strip()
     r["Sub_id1"]=df.iloc[:,2].astype(str).str.strip()
     r["Sub_id3"]=df.iloc[:,3].astype(str).str.strip() if df.shape[1]>3 else ""
@@ -180,7 +180,7 @@ def ler_awareness():
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=(cab+["_"]*mc)[:mc])
     r=pd.DataFrame()
-    r["Data"]=pd.to_datetime(df.iloc[:,0],errors="coerce")
+    r["Data"]=pd.to_datetime(df.iloc[:,0],dayfirst=True,errors="coerce")
     # col0=Data, col1=Sub_id2, col2=Investimento, col3=Impressoes, col4=Alcance, col5=Visitas, col6=Seguidores, col7=Comentarios
     r["Investimento_aw"]=df.iloc[:,2].apply(parse_num) if df.shape[1]>2 else 0.0
     r["Impressoes_aw"]=df.iloc[:,3].apply(parse_num) if df.shape[1]>3 else 0.0
