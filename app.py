@@ -24,9 +24,14 @@ html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"]{background-co
 [data-testid="stSidebar"] button{background-color:#3a2c28!important;border:1px solid #bd6d34!important;}
 [data-testid="stSidebar"] button:hover{background-color:#bd6d34!important;}
 .metric-card{background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:16px 20px;border-left:4px solid #bd6d34;margin-bottom:4px;}
-.metric-card.green{border-left-color:#7a9e4e;}.metric-card.red{border-left-color:#c0392b;}
-.metric-card.yellow{border-left-color:#d4a017;}.metric-card.purple{border-left-color:#9c5834;}
-.metric-card.orange{border-left-color:#bd6d34;}.metric-card.blue{border-left-color:#2980b9;}
+.metric-card.green{border-left-color:#7a9e4e;border-left-width:6px;}
+.metric-card.red{border-left-color:#c0392b;border-left-width:6px;}
+.metric-card.yellow{border-left-color:#d4a017;border-left-width:6px;}
+.metric-card.purple{border-left-color:#9c5834;}.metric-card.orange{border-left-color:#bd6d34;}
+.metric-card.blue{border-left-color:#2980b9;}
+.metric-card.roi-green{border-left-color:#7a9e4e;border-left-width:6px;background:linear-gradient(135deg,#1a2614,#1e2c18);}
+.metric-card.roi-yellow{border-left-color:#d4a017;border-left-width:6px;background:linear-gradient(135deg,#241f0a,#2a2410);}
+.metric-card.roi-red{border-left-color:#c0392b;border-left-width:6px;background:linear-gradient(135deg,#2a1010,#321515);}
 .metric-label{color:#c5936d;font-size:11px;text-transform:uppercase;letter-spacing:1px;}
 .metric-value{color:#f6e8d8;font-size:22px;font-weight:700;margin-top:4px;}
 .metric-delta-pos{color:#7a9e4e;font-size:11px;margin-top:2px;}
@@ -380,8 +385,9 @@ def main():
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,mv.get("invest",0)),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
         roi_g=m["roi"]
-        cor_roi_g="green" if roi_g>1 else ("yellow" if roi_g>=0 else "red")
+        cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
         card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,mv.get("roi",0)),sparkline(df_daily,"ROI_calc","#d4a017"))
+        st.markdown('<div style="font-size:10px;color:#562d1d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> >1 &nbsp;<span style="color:#d4a017;">■</span> 0-1 &nbsp;<span style="color:#c0392b;">■</span> <0</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
     with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"))
     with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"))
@@ -465,8 +471,10 @@ def main():
         ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
         # ROI com formatacao condicional
         roi_v=m_pago["roi"]
-        roi_cor="red" if roi_v<0 else ("yellow" if roi_v<1 else "green")
+        roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
         ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,mp.get("roi",0)),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),mp.get("cac",0)),roi_cor)
+        with k5:
+            st.markdown('<div style="font-size:10px;color:#562d1d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> >1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> <0 prejuizo</div>',unsafe_allow_html=True)
 
         # Linha 2: metricas de campanha
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
