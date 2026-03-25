@@ -34,9 +34,9 @@ html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"]{background-co
 .metric-card.roi-red{border-left-color:#c0392b;border-left-width:6px;background:linear-gradient(135deg,#2a1010,#321515);}
 .metric-label{color:#c5936d;font-size:11px;text-transform:uppercase;letter-spacing:1px;}
 .metric-value{color:#f6e8d8;font-size:22px;font-weight:700;margin-top:4px;}
-.metric-delta-pos{color:#7a9e4e;font-size:11px;margin-top:2px;}
-.metric-delta-neg{color:#c0392b;font-size:11px;margin-top:2px;}
-.metric-delta-neu{color:#c5936d;font-size:11px;margin-top:2px;}
+.metric-delta-pos{color:#7a9e4e;font-size:13px;margin-top:2px;font-weight:500;}
+.metric-delta-neg{color:#c0392b;font-size:13px;margin-top:2px;font-weight:500;}
+.metric-delta-neu{color:#c5936d;font-size:13px;margin-top:2px;}
 .section-title{color:#f6e8d8;font-size:18px;font-weight:600;margin:24px 0 12px 0;padding-bottom:8px;border-bottom:1px solid #3a2c28;}
 .canal-card{background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:16px;margin-bottom:8px;border:1px solid #3a2c28;}
 .canal-title{color:#bd6d34;font-size:14px;font-weight:700;margin-bottom:8px;}
@@ -396,7 +396,8 @@ def main():
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],mv.get("comissao",0)-invest_total_ant),sparkline(df_daily,"Comissao","#9c5834"))
+    lucro_ant=mv.get("comissao",0)-invest_total_ant
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant),sparkline(df_daily,"Comissao","#9c5834"))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
         roi_g=m["roi"]
