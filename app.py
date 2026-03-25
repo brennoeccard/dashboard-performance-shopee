@@ -409,15 +409,15 @@ def main():
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    lucro_ant=mv.get("comissao",0)-invest_total_ant
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant),sparkline(df_daily,"Comissao","#9c5834"))
-    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant),sparkline(df_daily,"Investimento","#c0392b"))
+    lucro_ant=(mv.get("comissao",0)-invest_total_ant) if invest_pago_ant>0 else None
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"))
+    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
         roi_g=m["roi"]
         cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
         comissao_ant=mv.get("comissao",0)
-        roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_total_ant>0 else 0
-        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant),sparkline(df_daily,"ROI_calc","#d4a017"))
+        roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
+        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"))
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
     with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"))
