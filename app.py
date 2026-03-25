@@ -504,6 +504,7 @@ def main():
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
         lucro_med=lucro_camp/n_dias_p
         lucro_med_a=(mp.get("lucro",0)/(n_dias_p_ant or 1))
+        _pago_comissao_ant=df_ant[df_ant["Sub_id2"]=="pago"]["Comissao"].sum() if not df_ant.empty else 0
         lucro_camp_ant=(_pago_comissao_ant-invest_pago_ant) if invest_pago_ant>0 else None
         lucro_med_ant=(lucro_camp_ant/n_dias_p_ant) if lucro_camp_ant is not None else None
         ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_ant if lucro_med_ant is not None else None),cor_roi)
@@ -512,7 +513,6 @@ def main():
         roi_v=m_pago["roi"]
         roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
         # roi_camp_ant: use comissao from df_ant filtered to pago
-        _pago_comissao_ant=df_ant[df_ant["Sub_id2"]=="pago"]["Comissao"].sum() if not df_ant.empty else 0
         roi_camp_ant=(_pago_comissao_ant-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else None
         ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0,inverted=True),roi_cor)
         with k5:
