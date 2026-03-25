@@ -115,7 +115,7 @@ def ler_dados():
     nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao"]
     df=df.rename(columns={df.columns[i]:nomes[i] for i in range(min(len(df.columns),len(nomes)))})
     for col in ["Cliques","Vendas","Comissao"]: df[col]=df[col].apply(parse_num)
-    df["Data"]=pd.to_datetime(df["Data"],dayfirst=True,errors="coerce")
+    df["Data"]=pd.to_datetime(df["Data"],errors="coerce")
     df=df.dropna(subset=["Data"])
     df["Sub_id2"]=df["Sub_id2"].fillna("").str.strip()
     df["Sub_id1"]=df["Sub_id1"].fillna("").str.strip()
@@ -221,6 +221,15 @@ def main():
 
     with st.spinner("A carregar dados..."):
         df_raw=ler_dados(); df_pago_raw=ler_pago(); df_aw_raw=ler_awareness()
+
+    with st.expander("🔍 DEBUG dados",expanded=True):
+        st.write(f"df_raw: {len(df_raw)} linhas, colunas: {df_raw.columns.tolist()}")
+        if not df_raw.empty:
+            st.write("Sub_id2 únicos:", df_raw["Sub_id2"].unique().tolist())
+            st.write("Amostra cliques por canal:")
+            st.dataframe(df_raw.groupby("Sub_id2").agg(Cliques=("Cliques","sum"),Vendas=("Vendas","sum"),Comissao=("Comissao","sum")).reset_index())
+        st.write(f"df_pago_raw: {len(df_pago_raw)} linhas")
+        st.write(f"invest_pago seria: {df_pago_raw['Investimento'].sum() if not df_pago_raw.empty else 0:.2f}")
 
     if df_raw.empty: st.error("Sem dados na planilha."); return
 
@@ -426,57 +435,6 @@ def main():
         with k8:  card("CAC",fmt_brl(m_pago.get("cac",0)),"purple",delta_html(m_pago.get("cac",0),mp.get("cac",0)))
         with k9:  card("CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),"yellow",delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)))
         with k10: card("Frequencia","{:.2f}x".format(m_pago.get("freq",0)),"orange",delta_html(m_pago.get("freq",0),mp.get("freq",0)))
-
-    # METRICAS PAGO — graficos logo abaixo dos KPIs
-    if not df_pago_periodo.empty:
-        st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:12px 0 8px 0;">📈 Evolucao Metricas Campanha</div>',unsafe_allow_html=True)
-        df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
-        df_pd_v=df_pago_v.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum")).reset_index()
-        df_pd=df_pd.merge(df_pd_v,on="Data",how="left").fillna(0)
-        df_pd["CPM"]=(df_pd["Investimento"]/df_pd["Impressoes"]*1000).replace([np.inf,np.nan],0)
-        df_pd["CPC"]=(df_pd["Investimento"]/df_pd["Cliques_Meta"]).replace([np.inf,np.nan],0)
-        df_pd["CAC"]=(df_pd["Investimento"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
-        df_pd["CPVenda"]=(df_pd["Comissao"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
-        df_pd["CTR_Meta"]=(df_pd["Cliques_Meta"]/df_pd["Alcance"]*100).replace([np.inf,np.nan],0)
-        metricas_pago_sel={
-            "Impressoes vs CPM":("Investimento","Impressoes","CPM","Investimento (R$)","Impressoes","CPM (R$)","#c5936d"),
-            "Cliques vs CPC":("Investimento","Cliques_Meta","CPC","Investimento (R$)","Cliques Meta","CPC (R$)","#bd6d34"),
-            "Vendas vs CAC":("Investimento","Vendas","CAC","Investimento (R$)","Vendas","CAC (R$)","#9c5834"),
-            "Vendas vs Custo/Venda":("Comissao","Vendas","CPVenda","Comissao (R$)","Vendas","Comissao/Venda (R$)","#d2b095"),
-            "Alcance vs CTR Meta":("Investimento","Alcance","CTR_Meta","Investimento (R$)","Alcance","CTR Meta (%)","#c5936d"),
-        }
-        met_pago_sel=st.selectbox("Metrica",list(metricas_pago_sel.keys()),key="sel_mp")
-        cb,cv,cc,y1,y2v,y2c,cor_p=metricas_pago_sel[met_pago_sel]
-        pago_theme=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
-            legend=dict(font=dict(color="#f6e8d8",size=12),bgcolor="rgba(30,18,16,0.8)"))
-        fig_mp=go.Figure()
-        fig_mp.add_trace(go.Bar(x=df_pd["Data"],y=df_pd[cb],name=y1,marker_color="#c0392b",opacity=0.7))
-        fig_mp.add_trace(go.Scatter(x=df_pd["Data"],y=df_pd[cv],name=y2v,mode="lines+markers",line=dict(color=cor_p,width=2),yaxis="y2"))
-        fig_mp.update_layout(title=met_pago_sel,hovermode="x unified",
-            yaxis=dict(title=y1,color="#c5936d",gridcolor="#2a1f1a"),
-            yaxis2=dict(title=y2v,overlaying="y",side="right",color=cor_p),**pago_theme)
-        st.plotly_chart(fig_mp,use_container_width=True)
-
-        # GRAFICOS CAMPANHA PAGO
-        if not df_pago_periodo.empty:
-            df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
-            df_pd_v=df_pago_v.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum")).reset_index()
-            df_pd=df_pd.merge(df_pd_v,on="Data",how="left").fillna(0)
-            df_pd["CPM"]=(df_pd["Investimento"]/df_pd["Impressoes"]*1000).replace([np.inf,np.nan],0)
-            df_pd["CPC"]=(df_pd["Investimento"]/df_pd["Cliques_Meta"]).replace([np.inf,np.nan],0)
-            df_pd["CAC"]=(df_pd["Investimento"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
-            df_pd["CPVenda"]=(df_pd["Investimento"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
-            df_pd["CTR_Meta"]=(df_pd["Cliques_Meta"]/df_pd["Alcance"]*100).replace([np.inf,np.nan],0)
-            metricas_pago_sel={
-                "Impressoes vs CPM": ("Impressoes","CPM","Impressoes","CPM (R$)","#c5936d"),
-                "Cliques vs CPC": ("Cliques_Meta","CPC","Cliques Meta","CPC (R$)","#bd6d34"),
-                "Vendas vs CAC": ("Vendas","CAC","Vendas","CAC (R$)","#9c5834"),
-                "Vendas vs Custo/Venda": ("Vendas","CPVenda","Vendas","Custo/Venda (R$)","#d2b095"),
-                "Alcance vs CTR Meta": ("Alcance","CTR_Meta","Alcance","CTR Meta (%)","#c5936d"),
-            }
-            met_p=st.selectbox("Metrica Pago",list(metricas_pago_sel.keys()),key="sel_mp")
-            col_vol_p,col_custo_p,y2vp,y2cp,cor_p=metricas_pago_sel[met_p]
-            st.plotly_chart(dual_chart(df_pd,"Data","Investimento",col_vol_p,"Investimento vs {}".format(col_vol_p),"Investimento (R$)",y2vp,line_color=cor_p),use_container_width=True)
 
     # ════════════════════════════════════════
     # AWARENESS — KPIs + Graficos
