@@ -763,12 +763,22 @@ def main():
     if not df_ic.empty:
         fig=px.bar(df_ic,x="IPA_s",y="Sub_id3",orientation="h",title="Top Criativos por IPA",text="IPA_d",color="IPA_s",color_continuous_scale=["#562d1d","#9c5834","#bd6d34","#f6e8d8"],hover_data={"Sub_id1":True,"Vendas":True,"Comissao":":.2f","CTR":":.2f","Ticket":":.2f","IPA_s":False},labels={"IPA_s":"IPA","Sub_id3":"Criativo"})
         fig.update_traces(textposition="outside"); fig.update_layout(**PLOTLY_THEME,height=max(300,len(df_ic)*40),coloraxis_showscale=False); st.plotly_chart(fig,use_container_width=True)
-    df_it=df_ipa[["Sub_id3","Sub_id1","IPA_d","Vendas","Comissao","CTR","Ticket"]].copy()
-    df_it.columns=["Sub_id3","Sub_id1","IPA","Vendas","Comissao (R$)","CTR (%)","Ticket (R$)"]
+    df_it=df_ipa[["Sub_id3","Sub_id1","IPA_d","Vendas","Cliques","Comissao","CTR","Ticket"]].copy()
+    df_it.columns=["Sub_id3","Sub_id1","IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"]
     df_it["Comissao (R$)"]=df_it["Comissao (R$)"].apply(lambda x:"{:.2f}".format(x))
     df_it["CTR (%)"]=df_it["CTR (%)"].apply(lambda x:"{:.2f}%".format(x))
     df_it["Ticket (R$)"]=df_it["Ticket (R$)"].apply(lambda x:"{:.2f}".format(x))
-    st.dataframe(df_it,use_container_width=True,height=300)
+    df_it["Cliques"]=df_it["Cliques"].apply(lambda x:"{:,.0f}".format(x).replace(",","."))
+    df_it["Vendas"]=df_it["Vendas"].apply(lambda x:"{:,.0f}".format(x))
+    # Estilo: sub_ids alinhados a esquerda, metricas centradas
+    styled = df_it.style.set_properties(
+        subset=["Sub_id3","Sub_id1"], **{"text-align":"left"}
+    ).set_properties(
+        subset=["IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"], **{"text-align":"center"}
+    ).set_table_styles([
+        {"selector":"th","props":[("text-align","center")]}
+    ])
+    st.dataframe(styled,use_container_width=True,height=300)
 
 
     # ── TABELA ──
