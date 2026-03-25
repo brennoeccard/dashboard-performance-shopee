@@ -379,8 +379,9 @@ def main():
     with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],mv.get("lucro",0)),sparkline(df_daily,"Comissao","#9c5834"))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,mv.get("invest",0)),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
-        cor_roi="green" if m["roi"]>1 else ("yellow" if m["roi"]>=0 else "red")
-        card("ROI","{:.2f}".format(m["roi"]),cor_roi,delta_html(m["roi"],mv.get("roi",0)),sparkline(df_daily,"ROI_calc","#d4a017"))
+        roi_g=m["roi"]
+        cor_roi_g="green" if roi_g>1 else ("yellow" if roi_g>=0 else "red")
+        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,mv.get("roi",0)),sparkline(df_daily,"ROI_calc","#d4a017"))
     r5,r6,r7,r8=st.columns(4)
     with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"))
     with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"))
@@ -422,6 +423,17 @@ def main():
         cor_roi="green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
         mp=m_ant_pago if m_ant_pago else {}
         n_dias_p=len(df_pago_periodo["Data"].unique()) or 1
+        # Periodo anterior para metricas de campanha
+        if not df_pago_raw.empty:
+            _a_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
+            _a_ini=_a_fim-timedelta(days=(d_fim-d_ini).days)
+            _mp_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_a_ini)&(df_pago_raw["Data"].dt.date<=_a_fim)]
+            imp_p_ant=_mp_ant["Impressoes"].sum()
+            alc_p_ant=_mp_ant["Alcance"].sum()
+            clq_p_ant=_mp_ant["Cliques_Meta"].sum()
+            inv_p_ant=_mp_ant["Investimento"].sum()
+        else:
+            imp_p_ant=alc_p_ant=clq_p_ant=inv_p_ant=0
         vnd_med=m_pago["vendas"]/n_dias_p
         com_med=m_pago["comissao"]/n_dias_p
         inv_med=invest_pago/n_dias_p
@@ -459,9 +471,12 @@ def main():
         # Linha 2: metricas de campanha
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
         k6,k7,k8,k9=st.columns(4)
-        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),"","CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),mp.get("cpm_imp",0)),"yellow")
-        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),"","CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),mp.get("cpm_alc",0)),"yellow")
-        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),"","CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),mp.get("cpc",0)),"orange")
+        cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0
+        cpm_alc_ant=(inv_p_ant/alc_p_ant*1000) if alc_p_ant>0 else 0
+        cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0
+        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant),"yellow")
+        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant),"yellow")
+        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant),"orange")
         ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),"blue")
 
         # Graficos metricas pago
