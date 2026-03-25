@@ -34,9 +34,9 @@ html,body,[data-testid="stAppViewContainer"],[data-testid="stApp"]{background-co
 .metric-card.roi-red{border-left-color:#c0392b;border-left-width:6px;background:linear-gradient(135deg,#2a1010,#321515);}
 .metric-label{color:#c5936d;font-size:11px;text-transform:uppercase;letter-spacing:1px;}
 .metric-value{color:#f6e8d8;font-size:22px;font-weight:700;margin-top:4px;}
-.metric-delta-pos{color:#7a9e4e;font-size:13px;margin-top:2px;font-weight:500;}
-.metric-delta-neg{color:#c0392b;font-size:13px;margin-top:2px;font-weight:500;}
-.metric-delta-neu{color:#c5936d;font-size:13px;margin-top:2px;}
+.metric-delta-pos{color:#7a9e4e;font-size:14px;margin-top:2px;font-weight:500;}
+.metric-delta-neg{color:#c0392b;font-size:14px;margin-top:2px;font-weight:500;}
+.metric-delta-neu{color:#c5936d;font-size:14px;margin-top:2px;}
 .section-title{color:#f6e8d8;font-size:18px;font-weight:600;margin:24px 0 12px 0;padding-bottom:8px;border-bottom:1px solid #3a2c28;}
 .canal-card{background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:16px;margin-bottom:8px;border:1px solid #3a2c28;}
 .canal-title{color:#bd6d34;font-size:14px;font-weight:700;margin-bottom:8px;}
@@ -477,10 +477,10 @@ def main():
         # Linha 1: resultados financeiros
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
-        n_dias_p_ant=len(df_ant_pago["Data"].unique()) if not df_ant_pago.empty else 1
-        vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
-        com_med_a=(mp.get("comissao",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
-        inv_med_a=(mp.get("invest",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
+        n_dias_p_ant=max(len(df_ant_pago["Data"].unique()),1) if not df_ant_pago.empty else 1
+        vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant)
+        com_med_a=(mp.get("comissao",0)/n_dias_p_ant)
+        inv_med_a=invest_pago_ant/n_dias_p_ant  # usar invest_pago_ant real
         ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
         lucro_med=lucro_camp/n_dias_p
@@ -501,10 +501,12 @@ def main():
         cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0
         cpm_alc_ant=(inv_p_ant/alc_p_ant*1000) if alc_p_ant>0 else 0
         cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0
+        ctr_meta_ant=(clq_p_ant/alc_p_ant*100) if alc_p_ant>0 else 0
+        freq_ant_p=(imp_p_ant/alc_p_ant) if alc_p_ant>0 else 0
         ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant),"yellow")
         ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant),"yellow")
         ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant),"orange")
-        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),"blue")
+        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue")
 
         # Graficos metricas pago
         if not df_pago_periodo.empty:
