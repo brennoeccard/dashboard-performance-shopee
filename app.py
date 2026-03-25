@@ -67,12 +67,25 @@ def card(label,value,color="blue",delta_html_str="",sparkline_fig=None):
     st.markdown(html,unsafe_allow_html=True)
     if sparkline_fig: st.plotly_chart(sparkline_fig,use_container_width=True,config={"displayModeBar":False})
 
-def delta_html(val,ref):
-    if not ref or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
+def delta_html(val,ref,inverted=False):
+    """inverted=True para metricas onde queda e boa (CPM, CPC, CAC, custos)"""
+    if ref is None or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
+    if ref<0 and val>0: return '<span class="metric-delta-pos">▲ positivo (ant. negativo)</span>'
+    if ref>0 and val<0: return '<span class="metric-delta-neg">▼ negativo (ant. positivo)</span>'
+    if ref<0 and val<=0:
+        pct=(val-ref)/abs(ref)*100
+        if val>ref: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        elif val<ref: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        return '<span class="metric-delta-neu">= igual semana ant.</span>'
     pct=(val-ref)/abs(ref)*100
-    if pct>0: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(pct)
-    elif pct<0: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+    if inverted:
+        if pct<0: return '<span class="metric-delta-pos">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        elif pct>0: return '<span class="metric-delta-neg">▲ {:.1f}% vs semana ant.</span>'.format(pct)
+    else:
+        if pct>0: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(pct)
+        elif pct<0: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
     return '<span class="metric-delta-neu">= igual semana ant.</span>'
+
 
 def sparkline(df_d,col,color="#bd6d34"):
     if col not in df_d.columns or df_d[col].sum()==0: return None
@@ -491,7 +504,7 @@ def main():
         roi_v=m_pago["roi"]
         roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
         roi_camp_ant=(mp.get("comissao",0)-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else 0
-        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0),roi_cor)
+        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0,inverted=True),roi_cor)
         with k5:
             st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
 
@@ -503,9 +516,9 @@ def main():
         cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0
         ctr_meta_ant=(clq_p_ant/alc_p_ant*100) if alc_p_ant>0 else 0
         freq_ant_p=(imp_p_ant/alc_p_ant) if alc_p_ant>0 else 0
-        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant),"yellow")
-        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant),"yellow")
-        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant),"orange")
+        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant,inverted=True),"yellow")
+        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant,inverted=True),"yellow")
+        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant,inverted=True),"orange")
         ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue")
 
         # Graficos metricas pago
@@ -569,12 +582,12 @@ def main():
         freq_a=(imp_a/alc_a) if alc_a>0 else 0
         aw1,aw2,aw3=st.columns(3)
         pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
-        pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a),"yellow")
+        pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a,inverted=True),"yellow")
         pair(aw3,"Alcance",fmt_num(int(alc_aw)),delta_html(alc_aw,alc_a),"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,freq_a),"orange")
         aw4,aw5,aw6=st.columns(3)
-        pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a),"purple")
-        pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a),"green")
-        pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a),"blue")
+        pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a,inverted=True),"purple")
+        pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a,inverted=True),"green")
+        pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a,inverted=True),"blue")
 
         # Grafico awareness
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
