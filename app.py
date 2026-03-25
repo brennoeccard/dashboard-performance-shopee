@@ -249,23 +249,6 @@ def main():
     with st.spinner("A carregar dados..."):
         df_raw=ler_dados(); df_pago_raw=ler_pago(); df_aw_raw=ler_awareness()
 
-    # DEBUG — remover depois
-    with st.expander("🔍 DEBUG", expanded=True):
-        st.write("**df_pago_raw:**", len(df_pago_raw), "linhas")
-        if not df_pago_raw.empty:
-            st.write("Colunas:", df_pago_raw.columns.tolist())
-            st.write("Primeiras linhas:")
-            st.dataframe(df_pago_raw.head(5))
-            st.write("Investimento total raw:", df_pago_raw["Investimento"].sum())
-        st.write("**df_aw_raw:**", len(df_aw_raw), "linhas")
-        if not df_aw_raw.empty:
-            st.write("Colunas:", df_aw_raw.columns.tolist())
-            st.write("Primeiras linhas:")
-            st.dataframe(df_aw_raw.head(5))
-            st.write("Investimento_aw total:", df_aw_raw["Investimento_aw"].sum())
-        else:
-            st.write("df_aw_raw VAZIO")
-
     if df_raw.empty:
         st.error("Sem dados na planilha Resultados Shopee."); return
 
@@ -473,6 +456,68 @@ def main():
         with k9:  card("CAC",fmt_brl(m_pago.get("cac",0)),"purple",delta_html(m_pago.get("cac",0),mp.get("cac",0)))
         with k10: card("Frequencia","{:.2f}x".format(m_pago.get("freq",0)),"orange",delta_html(m_pago.get("freq",0),mp.get("freq",0)))
 
+    # AWARENESS
+    st.markdown('<div id="awareness" class="section-title">📡 Campanha Awareness</div>',unsafe_allow_html=True)
+    if not df_aw.empty:
+        inv_aw=df_aw["Investimento_aw"].sum(); imp_aw=df_aw["Impressoes_aw"].sum()
+        alc_aw=df_aw["Alcance_aw"].sum(); vis_aw=df_aw["Visitas_Perfil"].sum()
+        seg_aw=df_aw["Seguidores"].sum()
+        cpm_aw=(inv_aw/imp_aw*1000) if imp_aw>0 else 0
+        cpa_aw=(inv_aw/vis_aw) if vis_aw>0 else 0
+        cps_aw=(inv_aw/seg_aw) if seg_aw>0 else 0
+        freq_aw=imp_aw/alc_aw if alc_aw>0 else 0
+        aw1,aw2,aw3,aw4,aw5=st.columns(5)
+        with aw1: card("Invest. Awareness",fmt_brl(inv_aw),"red")
+        with aw2: card("Impressoes",fmt_num(int(imp_aw)),"yellow")
+        with aw3: card("Alcance",fmt_num(int(alc_aw)),"blue")
+        with aw4: card("Visitas ao Perfil",fmt_num(int(vis_aw)),"purple")
+        with aw5: card("Seguidores Ganhos",fmt_num(int(seg_aw)),"green")
+        aw6,aw7,aw8,aw9=st.columns(4)
+        with aw6: card("CPM Awareness",fmt_brl(cpm_aw),"yellow")
+        with aw7: card("Custo/Visita",fmt_brl(cpa_aw),"orange")
+        with aw8: card("Custo/Seguidor",fmt_brl(cps_aw),"purple")
+        with aw9: card("Frequencia","{:.2f}x".format(freq_aw),"blue")
+        df_aw_d=df_aw.groupby("Data").agg(
+            Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),
+            Alcance=("Alcance_aw","sum"),Visitas=("Visitas_Perfil","sum"),
+            Seguidores=("Seguidores","sum")).reset_index()
+        df_aw_d["CPM"]=(df_aw_d["Invest"]/df_aw_d["Impressoes"]*1000).replace([np.inf,np.nan],0)
+        df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
+        df_aw_d["CPS"]=(df_aw_d["Invest"]/df_aw_d["Seguidores"]).replace([np.inf,np.nan],0)
+
+        metricas_aw = {
+            "Visitas ao Perfil": ("Invest","CPA","Investimento (R$)","Custo/Visita (R$)","#bd6d34"),
+            "Impressoes": ("Invest","CPM","Investimento (R$)","CPM (R$)","#c5936d"),
+            "Seguidores": ("Invest","CPS","Investimento (R$)","Custo/Seguidor (R$)","#9c5834"),
+            "Alcance": ("Invest","Alcance","Investimento (R$)","Alcance","#d2b095"),
+        }
+        met_aw=st.selectbox("Metrica Awareness",list(metricas_aw.keys()),key="sel_aw")
+        col_bar,col_line,y1_title,y2_title,cor=metricas_aw[met_aw]
+        fig=go.Figure()
+        fig.add_trace(go.Bar(x=df_aw_d["Data"],y=df_aw_d[col_bar],name="Investimento",marker_color="#c0392b",opacity=0.7))
+        fig.add_trace(go.Scatter(x=df_aw_d["Data"],y=df_aw_d[col_line],name=met_aw,mode="lines+markers",line=dict(color=cor,width=2),yaxis="y2"))
+        aw_theme=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+            legend=dict(font=dict(color="#f6e8d8",size=12),bgcolor="rgba(30,18,16,0.8)"))
+        fig.update_layout(title="Awareness: Investimento vs {}".format(met_aw),
+            yaxis=dict(title=y1_title,color="#c5936d",gridcolor="#2a1f1a"),
+            yaxis2=dict(title=y2_title,overlaying="y",side="right",color=cor),
+            **aw_theme)
+        st.plotly_chart(fig,use_container_width=True)
+        df_os=df[df["Sub_id2"].str.lower().isin(["organico","story"])].groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
+        df_aw_s=df_aw_d[["Data","Invest"]].copy()
+        df_aw_s["Data"]=df_aw_s["Data"]+pd.Timedelta(days=3)
+        df_imp=df_os.merge(df_aw_s.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
+        if len(df_imp)>3 and df_imp["Invest_lag"].sum()>0:
+            corr=df_imp["Invest_lag"].corr(df_imp["Vendas"])
+            cor_txt="#7a9e4e" if corr>0.3 else ("#c0392b" if corr<-0.1 else "#c5936d")
+            interp="correlacao positiva" if corr>0.3 else ("sem correlacao clara" if corr>=-0.1 else "correlacao negativa")
+            st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Correlacao Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:11px;">— {}</span></div>'.format(cor_txt,corr,interp),unsafe_allow_html=True)
+    else:
+        n_raw=len(df_aw_raw) if not df_aw_raw.empty else 0
+        msg="Sem dados na aba Resultado Awareness." if n_raw==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n_raw)
+        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format(msg),unsafe_allow_html=True)
+
+
     st.markdown("---")
 
     # EVOLUCAO
@@ -541,46 +586,6 @@ def main():
         fig=px.imshow(df_corr,text_auto=".2f",title="Correlacao (dias com investimento)",color_continuous_scale="RdBu_r",zmin=-1,zmax=1)
         fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
-    # AWARENESS
-    st.markdown('<div id="awareness" class="section-title">📡 Campanha Awareness</div>',unsafe_allow_html=True)
-    if not df_aw.empty:
-        inv_aw=df_aw["Investimento_aw"].sum(); imp_aw=df_aw["Impressoes_aw"].sum()
-        alc_aw=df_aw["Alcance_aw"].sum(); vis_aw=df_aw["Visitas_Perfil"].sum()
-        seg_aw=df_aw["Seguidores"].sum()
-        cpm_aw=(inv_aw/imp_aw*1000) if imp_aw>0 else 0
-        cpa_aw=(inv_aw/vis_aw) if vis_aw>0 else 0
-        cps_aw=(inv_aw/seg_aw) if seg_aw>0 else 0
-        freq_aw=imp_aw/alc_aw if alc_aw>0 else 0
-        aw1,aw2,aw3,aw4,aw5=st.columns(5)
-        with aw1: card("Invest. Awareness",fmt_brl(inv_aw),"red")
-        with aw2: card("Impressoes",fmt_num(int(imp_aw)),"yellow")
-        with aw3: card("Alcance",fmt_num(int(alc_aw)),"blue")
-        with aw4: card("Visitas ao Perfil",fmt_num(int(vis_aw)),"purple")
-        with aw5: card("Seguidores Ganhos",fmt_num(int(seg_aw)),"green")
-        aw6,aw7,aw8,aw9=st.columns(4)
-        with aw6: card("CPM Awareness",fmt_brl(cpm_aw),"yellow")
-        with aw7: card("Custo/Visita",fmt_brl(cpa_aw),"orange")
-        with aw8: card("Custo/Seguidor",fmt_brl(cps_aw),"purple")
-        with aw9: card("Frequencia","{:.2f}x".format(freq_aw),"blue")
-        df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum")).reset_index()
-        fig=go.Figure()
-        fig.add_trace(go.Bar(x=df_aw_d["Data"],y=df_aw_d["Invest"],name="Investimento",marker_color="#c0392b",opacity=0.7))
-        fig.add_trace(go.Scatter(x=df_aw_d["Data"],y=df_aw_d["Visitas"],name="Visitas Perfil",mode="lines+markers",line=dict(color="#bd6d34",width=2),yaxis="y2"))
-        fig.update_layout(title="Awareness: Investimento vs Visitas",yaxis=dict(title="Investimento (R$)",color="#c5936d"),yaxis2=dict(title="Visitas",overlaying="y",side="right",color="#bd6d34"),**PLOTLY_THEME)
-        st.plotly_chart(fig,use_container_width=True)
-        df_os=df[df["Sub_id2"].str.lower().isin(["organico","story"])].groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
-        df_aw_s=df_aw_d[["Data","Invest"]].copy()
-        df_aw_s["Data"]=df_aw_s["Data"]+pd.Timedelta(days=3)
-        df_imp=df_os.merge(df_aw_s.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
-        if len(df_imp)>3 and df_imp["Invest_lag"].sum()>0:
-            corr=df_imp["Invest_lag"].corr(df_imp["Vendas"])
-            cor_txt="#7a9e4e" if corr>0.3 else ("#c0392b" if corr<-0.1 else "#c5936d")
-            interp="correlacao positiva" if corr>0.3 else ("sem correlacao clara" if corr>=-0.1 else "correlacao negativa")
-            st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Correlacao Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:11px;">— {}</span></div>'.format(cor_txt,corr,interp),unsafe_allow_html=True)
-    else:
-        n_raw=len(df_aw_raw) if not df_aw_raw.empty else 0
-        msg="Sem dados na aba Resultado Awareness." if n_raw==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n_raw)
-        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format(msg),unsafe_allow_html=True)
 
     # FUNIL
     if not df_pago_periodo.empty and df_pago_periodo["Impressoes"].sum()>0:
