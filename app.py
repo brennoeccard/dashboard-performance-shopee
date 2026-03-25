@@ -751,7 +751,8 @@ def main():
         for col in ["Comissao","Vendas","Ticket","CTR"]:
             mn,mx=df_v[col].min(),df_v[col].max()
             df_v[col+"_n"]=((df_v[col]-mn)/(mx-mn)*100) if mx>mn else 50.0
-        df_v["IPA"]=(df_v["Comissao_n"]*0.40+df_v["Vendas_n"]*0.25+df_v["Ticket_n"]*0.25+df_v["CTR_n"]*0.10).round(1)
+        df_v["Cliques_n"]=((df_v["Cliques"]-df_v["Cliques"].min())/(df_v["Cliques"].max()-df_v["Cliques"].min())*100) if df_v["Cliques"].max()>df_v["Cliques"].min() else 50.0
+        df_v["IPA"]=(df_v["Comissao_n"]*0.35+df_v["Vendas_n"]*0.25+df_v["Ticket_n"]*0.20+df_v["CTR_n"]*0.10+df_v["Cliques_n"]*0.10).round(1)
     ja_pago=set(df[df["Sub_id2"]=="pago"]["Sub_id3"].unique())
     df_ipa=df_ipa.merge(df_v[["Sub_id3","Sub_id1","IPA"]] if not df_v.empty else pd.DataFrame(columns=["Sub_id3","Sub_id1","IPA"]),on=["Sub_id3","Sub_id1"],how="left")
     df_ipa=df_ipa[~df_ipa["Sub_id3"].isin(ja_pago)]
