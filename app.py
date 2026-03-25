@@ -112,9 +112,13 @@ def ler_dados():
     cab=vals[0]; linhas=vals[1:]; mc=len(cab)
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=cab)
+    # Rename by position (nao por nome, pois cabecalho pode variar)
     nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao"]
     df=df.rename(columns={df.columns[i]:nomes[i] for i in range(min(len(df.columns),len(nomes)))})
     for col in ["Cliques","Vendas","Comissao"]: df[col]=df[col].apply(parse_num)
+    # Garantir que Cliques existe (pode vir como "Clique" sem S no cabecalho)
+    if "Clique" in df.columns and "Cliques" not in df.columns:
+        df=df.rename(columns={"Clique":"Cliques"})
     df["Data"]=pd.to_datetime(df["Data"],errors="coerce")
     df=df.dropna(subset=["Data"])
     df["Sub_id2"]=df["Sub_id2"].fillna("").str.strip()
@@ -132,7 +136,7 @@ def ler_pago():
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=(cab+["_"]*mc)[:mc])
     r=pd.DataFrame()
-    r["Data"]=pd.to_datetime(df.iloc[:,0],dayfirst=True,errors="coerce")
+    r["Data"]=pd.to_datetime(df.iloc[:,0],errors="coerce")  # YYYY-MM-DD format
     r["Sub_id2"]=df.iloc[:,1].astype(str).str.strip()
     r["Sub_id1"]=df.iloc[:,2].astype(str).str.strip()
     r["Sub_id3"]=df.iloc[:,3].astype(str).str.strip() if df.shape[1]>3 else ""
@@ -154,7 +158,7 @@ def ler_awareness():
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=(cab+["_"]*mc)[:mc])
     r=pd.DataFrame()
-    r["Data"]=pd.to_datetime(df.iloc[:,0],dayfirst=True,errors="coerce")
+    r["Data"]=pd.to_datetime(df.iloc[:,0],errors="coerce")  # YYYY-MM-DD format
     r["Investimento_aw"]=df.iloc[:,2].apply(parse_num) if df.shape[1]>2 else 0.0
     r["Impressoes_aw"]=df.iloc[:,3].apply(parse_num) if df.shape[1]>3 else 0.0
     r["Alcance_aw"]=df.iloc[:,4].apply(parse_num) if df.shape[1]>4 else 0.0
@@ -222,14 +226,6 @@ def main():
     with st.spinner("A carregar dados..."):
         df_raw=ler_dados(); df_pago_raw=ler_pago(); df_aw_raw=ler_awareness()
 
-    with st.expander("🔍 DEBUG dados",expanded=True):
-        st.write(f"df_raw: {len(df_raw)} linhas, colunas: {df_raw.columns.tolist()}")
-        if not df_raw.empty:
-            st.write("Sub_id2 únicos:", df_raw["Sub_id2"].unique().tolist())
-            st.write("Amostra cliques por canal:")
-            st.dataframe(df_raw.groupby("Sub_id2").agg(Cliques=("Cliques","sum"),Vendas=("Vendas","sum"),Comissao=("Comissao","sum")).reset_index())
-        st.write(f"df_pago_raw: {len(df_pago_raw)} linhas")
-        st.write(f"invest_pago seria: {df_pago_raw['Investimento'].sum() if not df_pago_raw.empty else 0:.2f}")
 
     if df_raw.empty: st.error("Sem dados na planilha."); return
 
@@ -327,9 +323,9 @@ def main():
     m_ant=calcular(df_ant) if not df_ant.empty else None
     m_ant_v=m_ant if m_ant else {}
 
-    df_pago_v =df[df["Sub_id2"].str.lower()=="pago"]
-    df_org    =df[df["Sub_id2"].str.lower()=="organico"]
-    df_story  =df[df["Sub_id2"].str.lower()=="story"]
+    df_pago_v =df[df["Sub_id2"].str.strip().str.lower()=="pago"]
+    df_org    =df[df["Sub_id2"].str.strip().str.lower()=="organico"]
+    df_story  =df[df["Sub_id2"].str.strip().str.lower()=="story"]
     m_pago    =calcular(df_pago_v)  if len(df_pago_v)>0  else None
     m_org     =calcular(df_org)     if len(df_org)>0     else None
     m_story   =calcular(df_story)   if len(df_story)>0   else None
