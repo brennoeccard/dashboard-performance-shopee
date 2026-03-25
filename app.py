@@ -447,9 +447,14 @@ def main():
         inv_med_a=(mp.get("invest",0)/n_dias_p_ant) if n_dias_p_ant>0 else 0
         ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
-        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Ticket Medio",fmt_brl(m_pago["ticket"]),delta_html(m_pago["ticket"],mp.get("ticket",0)),cor_roi)
+        lucro_med=lucro_camp/n_dias_p
+        lucro_med_a=(mp.get("lucro",0)/(n_dias_p_ant or 1))
+        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_a),cor_roi)
         ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
-        ppair(k5,"ROI","{:.2f}".format(m_pago["roi"]),delta_html(m_pago["roi"],mp.get("roi",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),cor_roi)
+        # ROI com formatacao condicional
+        roi_v=m_pago["roi"]
+        roi_cor="red" if roi_v<0 else ("yellow" if roi_v<1 else "green")
+        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,mp.get("roi",0)),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),mp.get("cac",0)),roi_cor)
 
         # Linha 2: metricas de campanha
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
@@ -457,7 +462,7 @@ def main():
         ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),"","CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),mp.get("cpm_imp",0)),"yellow")
         ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),"","CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),mp.get("cpm_alc",0)),"yellow")
         ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),"","CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),mp.get("cpc",0)),"orange")
-        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),mp.get("cac",0)),"blue")
+        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),"blue")
 
         # Graficos metricas pago
         if not df_pago_periodo.empty:
@@ -516,14 +521,16 @@ def main():
                     '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
                     unsafe_allow_html=True)
 
+        alc_a=df_aw_ant["Alcance_aw"].sum() if not df_aw_ant.empty else 0
+        freq_a=(imp_a/alc_a) if alc_a>0 else 0
         aw1,aw2,aw3=st.columns(3)
         pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
         pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a),"yellow")
-        pair(aw3,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a),"purple")
+        pair(aw3,"Alcance",fmt_num(int(alc_aw)),delta_html(alc_aw,alc_a),"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,freq_a),"orange")
         aw4,aw5,aw6=st.columns(3)
-        pair(aw4,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a),"green")
-        pair(aw5,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a),"blue")
-        pair(aw6,"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,imp_a/alc_aw if alc_aw>0 else 0),"Alcance",fmt_num(int(alc_aw)),"","orange")
+        pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a),"purple")
+        pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a),"green")
+        pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a),"blue")
 
         # Grafico awareness
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
