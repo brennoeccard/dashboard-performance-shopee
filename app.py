@@ -444,10 +444,13 @@ def main():
             df_pd["CPC"]=(df_pd["Investimento"]/df_pd["Cliques_Meta"]).replace([np.inf,np.nan],0)
             df_pd["CAC"]=(df_pd["Investimento"]/df_pd["Vendas"]).replace([np.inf,np.nan],0)
             df_pd["CTR_Meta"]=(df_pd["Cliques_Meta"]/df_pd["Alcance"]*100).replace([np.inf,np.nan],0)
-            met_opts={"Impressoes vs CPM":("Investimento","Impressoes","CPM"),"Cliques vs CPC":("Investimento","Cliques_Meta","CPC"),"Vendas vs CAC":("Investimento","Vendas","CAC"),"Alcance vs CTR Meta":("Investimento","Alcance","CTR_Meta")}
-            met_sel=st.selectbox("Metrica",list(met_opts.keys()),key="sel_pago_met")
-            bar_c,vol_c,custo_c=met_opts[met_sel]
-            st.plotly_chart(dual_chart(df_pd,"Data",bar_c,vol_c,"Investimento vs {}".format(vol_c),"Investimento (R$)",vol_c),use_container_width=True)
+            met_pd={"Investimento":"Investimento","Impressoes":"Impressoes","Alcance":"Alcance","Cliques Meta":"Cliques_Meta","Vendas":"Vendas","Comissao":"Comissao","CPM":"CPM","CPC":"CPC","CAC":"CAC","CTR Meta":"CTR_Meta"}
+            dp={k:v for k,v in met_pd.items() if v in df_pd.columns}
+            pc1,pc2=st.columns(2)
+            with pc1: pm1=st.selectbox("Barra",list(dp.keys()),index=0,key="pm1")
+            with pc2: pm2=st.selectbox("Linha",list(dp.keys()),index=2,key="pm2")
+            df_pf=df_pd[(df_pd[dp[pm1]]>0)|(df_pd[dp[pm2]]>0)]
+            st.plotly_chart(dual_chart(df_pf,"Data",dp[pm1],dp[pm2],"{} vs {}".format(pm1,pm2),pm1,pm2),use_container_width=True)
     else:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de campanha paga para o periodo seleccionado.</div>',unsafe_allow_html=True)
 
@@ -492,10 +495,13 @@ def main():
         df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
         df_aw_d["CPS"]=(df_aw_d["Invest"]/df_aw_d["Seguidores"]).replace([np.inf,np.nan],0)
         df_aw_d["CPC_aw"]=(df_aw_d["Invest"]/df_aw_d["Comentarios"]).replace([np.inf,np.nan],0)
-        aw_opts={"Invest vs Visitas":("Invest","Visitas","CPA"),"Invest vs Impressoes":("Invest","Impressoes","CPM"),"Invest vs Seguidores":("Invest","Seguidores","CPS"),"Invest vs Comentarios":("Invest","Comentarios","CPC_aw")}
-        aw_sel=st.selectbox("Metrica Awareness",list(aw_opts.keys()),key="sel_aw")
-        bc,vc,cc=aw_opts[aw_sel]
-        st.plotly_chart(dual_chart(df_aw_d,"Data",bc,vc,"Awareness: Investimento vs {}".format(vc),"Investimento (R$)",vc),use_container_width=True)
+        met_aw={"Investimento":"Invest","Impressoes":"Impressoes","Alcance":"Alcance","Visitas ao Perfil":"Visitas","Seguidores":"Seguidores","Comentarios":"Comentarios","CPM":"CPM","Custo/Visita":"CPA","Custo/Seguidor":"CPS","Custo/Comentario":"CPC_aw"}
+        da={k:v for k,v in met_aw.items() if v in df_aw_d.columns}
+        awc1,awc2=st.columns(2)
+        with awc1: am1=st.selectbox("Barra",list(da.keys()),index=0,key="am1")
+        with awc2: am2=st.selectbox("Linha",list(da.keys()),index=3,key="am2")
+        df_awf=df_aw_d[(df_aw_d[da[am1]]>0)|(df_aw_d[da[am2]]>0)]
+        st.plotly_chart(dual_chart(df_awf,"Data",da[am1],da[am2],"{} vs {}".format(am1,am2),am1,am2),use_container_width=True)
 
         # Correlacao awareness -> vendas
         df_os=df[df["Sub_id2"].isin(["organico","story"])].groupby("Data").agg(Vendas=("Vendas","sum")).reset_index()
@@ -522,6 +528,37 @@ def main():
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format("Sem dados na aba Resultado Awareness." if n==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n)),unsafe_allow_html=True)
 
     st.markdown("---")
+
+    # ── CRUZAMENTO DE METRICAS ──
+    st.markdown('<div id="cruzamento" class="section-title">🔀 Cruzamento de Metricas</div>',unsafe_allow_html=True)
+    df_cross=df_daily.copy()
+    if not df_aw.empty:
+        df_aw_cx=df_aw.groupby("Data").agg(Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
+        df_cross=df_cross.merge(df_aw_cx,on="Data",how="left").fillna(0)
+    else:
+        for c in ["Visitas","Seguidores","Comentarios"]: df_cross[c]=0.0
+
+    met_disp={
+        "Invest. Total (Pago+Awareness)":"Investimento",
+        "Invest. Pago":"Invest_pago",
+        "Invest. Awareness":"Invest_aw",
+        "Vendas":"Vendas",
+        "Comissao":"Comissao",
+        "Cliques":"Cliques",
+        "Ticket Medio":"Ticket_Medio",
+        "Visitas Perfil":"Visitas",
+        "Seguidores":"Seguidores",
+        "Comentarios":"Comentarios",
+    }
+    disp={k:v for k,v in met_disp.items() if v in df_cross.columns}
+    cx1,cx2=st.columns(2)
+    with cx1: met1=st.selectbox("Metrica 1 (barras)",list(disp.keys()),index=0,key="cx1")
+    with cx2: met2=st.selectbox("Metrica 2 (linha)",list(disp.keys()),index=3,key="cx2")
+    col_x,col_y=disp[met1],disp[met2]
+    if col_x in df_cross.columns and col_y in df_cross.columns:
+        df_cf=df_cross[(df_cross[col_x]>0)|(df_cross[col_y]>0)]
+        st.plotly_chart(dual_chart(df_cf,"Data",col_x,col_y,"{} vs {}".format(met1,met2),met1,met2),use_container_width=True)
+
 
     # ── EVOLUCAO ──
     st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>',unsafe_allow_html=True)
@@ -603,35 +640,6 @@ def main():
     df_it["Ticket (R$)"]=df_it["Ticket (R$)"].apply(lambda x:"{:.2f}".format(x))
     st.dataframe(df_it,use_container_width=True,height=300)
 
-    # ── CRUZAMENTO DE METRICAS ──
-    st.markdown('<div id="cruzamento" class="section-title">🔀 Cruzamento de Metricas</div>',unsafe_allow_html=True)
-    df_cross=df_daily.copy()
-    if not df_aw.empty:
-        df_aw_cx=df_aw.groupby("Data").agg(Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
-        df_cross=df_cross.merge(df_aw_cx,on="Data",how="left").fillna(0)
-    else:
-        for c in ["Visitas","Seguidores","Comentarios"]: df_cross[c]=0.0
-
-    met_disp={
-        "Invest. Total (Pago+Awareness)":"Investimento",
-        "Invest. Pago":"Invest_pago",
-        "Invest. Awareness":"Invest_aw",
-        "Vendas":"Vendas",
-        "Comissao":"Comissao",
-        "Cliques":"Cliques",
-        "Ticket Medio":"Ticket_Medio",
-        "Visitas Perfil":"Visitas",
-        "Seguidores":"Seguidores",
-        "Comentarios":"Comentarios",
-    }
-    disp={k:v for k,v in met_disp.items() if v in df_cross.columns}
-    cx1,cx2=st.columns(2)
-    with cx1: met1=st.selectbox("Metrica 1 (barras)",list(disp.keys()),index=0,key="cx1")
-    with cx2: met2=st.selectbox("Metrica 2 (linha)",list(disp.keys()),index=3,key="cx2")
-    col_x,col_y=disp[met1],disp[met2]
-    if col_x in df_cross.columns and col_y in df_cross.columns:
-        df_cf=df_cross[(df_cross[col_x]>0)|(df_cross[col_y]>0)]
-        st.plotly_chart(dual_chart(df_cf,"Data",col_x,col_y,"{} vs {}".format(met1,met2),met1,met2),use_container_width=True)
 
     # ── TABELA ──
     st.markdown('<div class="section-title">📋 Dados Detalhados</div>',unsafe_allow_html=True)
