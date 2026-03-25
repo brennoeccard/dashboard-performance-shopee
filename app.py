@@ -504,7 +504,9 @@ def main():
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
         lucro_med=lucro_camp/n_dias_p
         lucro_med_a=(mp.get("lucro",0)/(n_dias_p_ant or 1))
-        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_a),cor_roi)
+        lucro_camp_ant=(_pago_comissao_ant-invest_pago_ant) if invest_pago_ant>0 else None
+        lucro_med_ant=(lucro_camp_ant/n_dias_p_ant) if lucro_camp_ant is not None else None
+        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_ant if lucro_med_ant is not None else None),cor_roi)
         ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
         # ROI com formatacao condicional
         roi_v=m_pago["roi"]
