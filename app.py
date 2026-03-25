@@ -249,6 +249,23 @@ def main():
     with st.spinner("A carregar dados..."):
         df_raw=ler_dados(); df_pago_raw=ler_pago(); df_aw_raw=ler_awareness()
 
+    # DEBUG — remover depois
+    with st.expander("🔍 DEBUG", expanded=True):
+        st.write("**df_pago_raw:**", len(df_pago_raw), "linhas")
+        if not df_pago_raw.empty:
+            st.write("Colunas:", df_pago_raw.columns.tolist())
+            st.write("Primeiras linhas:")
+            st.dataframe(df_pago_raw.head(5))
+            st.write("Investimento total raw:", df_pago_raw["Investimento"].sum())
+        st.write("**df_aw_raw:**", len(df_aw_raw), "linhas")
+        if not df_aw_raw.empty:
+            st.write("Colunas:", df_aw_raw.columns.tolist())
+            st.write("Primeiras linhas:")
+            st.dataframe(df_aw_raw.head(5))
+            st.write("Investimento_aw total:", df_aw_raw["Investimento_aw"].sum())
+        else:
+            st.write("df_aw_raw VAZIO")
+
     if df_raw.empty:
         st.error("Sem dados na planilha Resultados Shopee."); return
 
