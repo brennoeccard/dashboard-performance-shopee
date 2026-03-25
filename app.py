@@ -315,6 +315,21 @@ def main():
     invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
     invest_total=invest_pago+invest_aw
 
+    # Periodo anterior para investimento
+    if not df_pago_raw.empty:
+        _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
+        _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
+        _pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]
+        invest_pago_ant=_pago_ant["Investimento"].sum()
+    else:
+        invest_pago_ant=0.0
+    if not df_aw_raw.empty:
+        _aw_ant=df_aw_raw[(df_aw_raw["Data"].dt.date>=_ant_ini)&(df_aw_raw["Data"].dt.date<=_ant_fim)]
+        invest_aw_ant=_aw_ant["Investimento_aw"].sum()
+    else:
+        invest_aw_ant=0.0
+    invest_total_ant=invest_pago_ant+invest_aw_ant
+
     m=calcular(df)
     m["invest"]=invest_pago
     m["invest_total"]=invest_total
@@ -381,12 +396,14 @@ def main():
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],mv.get("lucro",0)),sparkline(df_daily,"Comissao","#9c5834"))
-    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,mv.get("invest",0)),sparkline(df_daily,"Investimento","#c0392b"))
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],mv.get("comissao",0)-invest_total_ant),sparkline(df_daily,"Comissao","#9c5834"))
+    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
         roi_g=m["roi"]
         cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
-        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,mv.get("roi",0)),sparkline(df_daily,"ROI_calc","#d4a017"))
+        comissao_ant=mv.get("comissao",0)
+        roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_total_ant>0 else 0
+        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant),sparkline(df_daily,"ROI_calc","#d4a017"))
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
     with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"))
@@ -468,11 +485,12 @@ def main():
         lucro_med=lucro_camp/n_dias_p
         lucro_med_a=(mp.get("lucro",0)/(n_dias_p_ant or 1))
         ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_a),cor_roi)
-        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
+        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
         # ROI com formatacao condicional
         roi_v=m_pago["roi"]
         roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
-        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,mp.get("roi",0)),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),mp.get("cac",0)),roi_cor)
+        roi_camp_ant=(mp.get("comissao",0)-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else 0
+        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0),roi_cor)
         with k5:
             st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
 
