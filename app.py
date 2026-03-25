@@ -421,18 +421,39 @@ def main():
         roi_camp=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
         cor_roi="green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
         mp=m_ant_pago if m_ant_pago else {}
+        n_dias_p=len(df_pago_periodo["Data"].unique()) or 1
+        vnd_med=m_pago["vendas"]/n_dias_p
+        com_med=m_pago["comissao"]/n_dias_p
+        inv_med=invest_pago/n_dias_p
+        roi_med=m_pago["roi"]  # mesmo valor, referencia
+
+        def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
+            with col:
+                st.markdown(
+                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
+                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
+                    '</div>'
+                    '<div class="metric-card {c}" style="opacity:0.75;">'
+                    '<div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}'
+                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
+                    unsafe_allow_html=True)
+
+        # Linha 1: resultados financeiros
+        st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
-        with k1: card("Vendas",fmt_num(m_pago["vendas"]),"purple",delta_html(m_pago["vendas"],mp.get("vendas",0)))
-        with k2: card("Comissao",fmt_brl(m_pago["comissao"]),"blue",delta_html(m_pago["comissao"],mp.get("comissao",0)))
-        with k3: card("Ticket Medio",fmt_brl(m_pago["ticket"]),"orange",delta_html(m_pago["ticket"],mp.get("ticket",0)))
-        with k4: card("Investimento",fmt_brl(invest_pago),"red",delta_html(invest_pago,mp.get("invest",0)))
-        with k5: card("Lucro",fmt_brl(lucro_camp),cor_roi,delta_html(lucro_camp,mp.get("lucro",0)))
-        k6,k7,k8,k9,k10=st.columns(5)
-        with k6:  card("CPM",fmt_brl(m_pago.get("cpm_imp",0)),"yellow",delta_html(m_pago.get("cpm_imp",0),mp.get("cpm_imp",0)))
-        with k7:  card("CPC",fmt_brl(m_pago.get("cpc",0)),"yellow",delta_html(m_pago.get("cpc",0),mp.get("cpc",0)))
-        with k8:  card("CAC",fmt_brl(m_pago.get("cac",0)),"purple",delta_html(m_pago.get("cac",0),mp.get("cac",0)))
-        with k9:  card("CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),"blue",delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)))
-        with k10: card("Frequencia","{:.2f}x".format(m_pago.get("freq",0)),"orange",delta_html(m_pago.get("freq",0),mp.get("freq",0)))
+        ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),"","purple")
+        ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),"","blue")
+        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,mp.get("lucro",0)),"Ticket Medio",fmt_brl(m_pago["ticket"]),delta_html(m_pago["ticket"],mp.get("ticket",0)),cor_roi)
+        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,mp.get("invest",0)),"Invest./dia",fmt_brl(inv_med),"","red")
+        ppair(k5,"ROI","{:.2f}".format(m_pago["roi"]),delta_html(m_pago["roi"],mp.get("roi",0)),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),mp.get("freq",0)),cor_roi)
+
+        # Linha 2: metricas de campanha
+        st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
+        k6,k7,k8,k9=st.columns(4)
+        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),"","CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),mp.get("cpm_imp",0)),"yellow")
+        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),"","CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),mp.get("cpm_alc",0)),"yellow")
+        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),"","CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),mp.get("cpc",0)),"orange")
+        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),mp.get("ctr_meta",0)),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),mp.get("cac",0)),"blue")
 
         # Graficos metricas pago
         if not df_pago_periodo.empty:
@@ -476,18 +497,27 @@ def main():
         cps_a=(inv_a/seg_a) if seg_a>0 else 0
         cpc_a=(inv_a/com_a) if com_a>0 else 0
 
+        n_dias_aw=len(df_aw["Data"].unique()) or 1
+        inv_aw_med=inv_aw_s/n_dias_aw
+
+        def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
+            with col:
+                st.markdown(
+                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
+                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
+                    '</div>'
+                    '<div class="metric-card {c}" style="opacity:0.75;">'
+                    '<div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}'
+                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
+                    unsafe_allow_html=True)
+
         aw1,aw2,aw3,aw4=st.columns(4)
-        with aw1: card("Invest. Awareness",fmt_brl(inv_aw_s),"red",delta_html(inv_aw_s,inv_a))
-        with aw2: card("Impressoes",fmt_num(int(imp_aw)),"yellow",delta_html(imp_aw,imp_a))
-        with aw3: card("Visitas ao Perfil",fmt_num(int(vis_aw)),"purple",delta_html(vis_aw,vis_a))
-        with aw4: card("Seguidores",fmt_num(int(seg_aw)),"green",delta_html(seg_aw,seg_a))
-        aw5,aw6,aw7,aw8=st.columns(4)
-        with aw5: card("Comentarios",fmt_num(int(com_aw)),"blue",delta_html(com_aw,com_a))
-        with aw6: card("CPM",fmt_brl(cpm_aw),"yellow",delta_html(cpm_aw,cpm_a))
-        with aw7: card("Custo/Visita",fmt_brl(cpa_aw),"orange",delta_html(cpa_aw,cpa_a))
-        with aw8: card("Custo/Seguidor",fmt_brl(cps_aw),"purple",delta_html(cps_aw,cps_a))
-        _,awc,_=st.columns([2,1,2])
-        with awc: card("Custo/Comentario",fmt_brl(cpc_aw),"blue",delta_html(cpc_aw,cpc_a))
+        pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),"","red")
+        pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a),"yellow")
+        pair(aw3,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a),"purple")
+        pair(aw4,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a),"green")
+        _,aw5,_=st.columns([1.5,1,1.5])
+        pair(aw5,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a),"blue")
 
         # Grafico awareness
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
