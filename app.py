@@ -291,28 +291,33 @@ def render_publicos(df_raw, df_pago_raw):
     publicos = sorted(df_p["Sub_id4"].unique())
     n_dias_periodo = max((d_fim - d_ini).days + 1, 1)
 
-    # ── FIX CRUZAMENTO CORRECTO ──
-    # A chave de ligação entre df_raw e df_pago_raw é Sub_id1 + Sub_id3 (composta).
-    # Cada público (Sub_id4) está associado a pares (Sub_id1, Sub_id3) específicos.
-    # Filtrar df_pago_raw APENAS por linhas COM Sub_id4 preenchido (exclui campanhas
-    # genéricas como 260302fronha que não têm público definido).
-    df_pago_com_pub = pd.DataFrame()
+    # ── LÓGICA CORRECTA ──
+    # df_pago_raw já tem Sub_id4 em algumas linhas.
+    # Filtrar só as linhas COM Sub_id4 preenchido e dentro do período.
+    # As métricas de campanha (Invest, Impressões, Alcance, Cliques Meta)
+    # vêm directamente do df_pago_raw agrupado por Sub_id4.
+    # As métricas Shopee (Vendas, Comissão, Cliques) vêm do df_raw (df_p)
+    # que já está filtrado por Sub_id4 via Resultados Shopee.
     if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
-        df_pago_com_pub = df_pago_raw[
+        df_pago_pub = df_pago_raw[
             (df_pago_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") &
             (df_pago_raw["Data"].dt.date >= d_ini) &
             (df_pago_raw["Data"].dt.date <= d_fim)
         ].copy()
-
-    # Mapear Sub_id4 → lista de pares (Sub_id1, Sub_id3) do df_pago_com_pub
-    pub_to_pairs = {}
-    if not df_pago_com_pub.empty:
-        for pub_val, grp in df_pago_com_pub.groupby("Sub_id4"):
-            pairs = list(grp[["Sub_id1","Sub_id3"]].drop_duplicates().itertuples(index=False, name=None))
-            pub_to_pairs[pub_val] = pairs
+        # Agregar métricas de campanha por Sub_id4
+        camp_por_pub = df_pago_pub.groupby("Sub_id4").agg(
+            Investimento=("Investimento","sum"),
+            Impressoes=("Impressoes","sum"),
+            Alcance=("Alcance","sum"),
+            Cliques_Meta=("Cliques_Meta","sum"),
+        ).reset_index()
+    else:
+        df_pago_pub = pd.DataFrame()
+        camp_por_pub = pd.DataFrame(columns=["Sub_id4","Investimento","Impressoes","Alcance","Cliques_Meta"])
 
     rows = []
     for pub in publicos:
+        # Métricas Shopee do df_raw
         df_pub = df_p[df_p["Sub_id4"] == pub]
         vendas    = df_pub["Vendas"].sum()
         comissao  = df_pub["Comissao"].sum()
@@ -320,16 +325,15 @@ def render_publicos(df_raw, df_pago_raw):
         ctr       = vendas/cliques if cliques>0 else 0
         ticket    = comissao/vendas if vendas>0 else 0
 
-        invest = 0.0
-        impressoes = alcance = cliques_meta = 0.0
-
-        if not df_pago_com_pub.empty:
-            # Filtrar df_pago_com_pub directamente pelo Sub_id4 — é a forma mais directa
-            df_camp = df_pago_com_pub[df_pago_com_pub["Sub_id4"] == pub]
-            invest       = df_camp["Investimento"].sum()
-            impressoes   = df_camp["Impressoes"].sum()
-            alcance      = df_camp["Alcance"].sum()
-            cliques_meta = df_camp["Cliques_Meta"].sum()
+        # Métricas de campanha do df_pago_raw agrupado
+        row_camp = camp_por_pub[camp_por_pub["Sub_id4"] == pub]
+        if not row_camp.empty:
+            invest       = row_camp["Investimento"].iloc[0]
+            impressoes   = row_camp["Impressoes"].iloc[0]
+            alcance      = row_camp["Alcance"].iloc[0]
+            cliques_meta = row_camp["Cliques_Meta"].iloc[0]
+        else:
+            invest = impressoes = alcance = cliques_meta = 0.0
 
         ctr_meta  = cliques_meta / alcance * 100 if alcance > 0 else 0
         cpm       = invest / impressoes * 1000 if impressoes > 0 else 0
