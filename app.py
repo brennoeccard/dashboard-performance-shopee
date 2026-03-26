@@ -235,20 +235,21 @@ def render_publicos(df_raw, df_pago_raw):
 
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
 
-    # Verificar se há dados de Sub_id4
-    if "Sub_id4" not in df_raw.columns or df_raw["Sub_id4"].replace("","nan").replace(None,"nan").pipe(lambda s: (s=="nan").all()):
+    # Filtrar só linhas com Sub_id4 preenchido e canal pago — o resto é ignorado
+    if "Sub_id4" not in df_raw.columns:
+        df_p = pd.DataFrame()
+    else:
+        df_p = df_raw[
+            (df_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") &
+            (df_raw["Sub_id2"].str.lower() == "pago")
+        ].copy()
+
+    if df_p.empty:
         st.markdown('''<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:32px;text-align:center;margin-top:40px;">
         <div style="font-size:40px;margin-bottom:12px;">📭</div>
         <div style="color:#f6e8d8;font-size:16px;font-weight:500;">Sem dados de públicos ainda</div>
-        <div style="color:#c5936d;font-size:13px;margin-top:8px;">O Sub_id4 ainda não foi preenchido. Quando o script correr com campanhas segmentadas por público, os dados aparecerão aqui.</div>
+        <div style="color:#c5936d;font-size:13px;margin-top:8px;">Quando o script correr com campanhas segmentadas por público (Sub_id4 preenchido), os dados aparecerão aqui.</div>
         </div>''', unsafe_allow_html=True)
-        return
-
-    # Filtrar só linhas com Sub_id4 preenchido e canal pago
-    df_p = df_raw[(df_raw["Sub_id4"].str.strip() != "") & (df_raw["Sub_id2"].str.lower() == "pago")].copy()
-
-    if df_p.empty:
-        st.warning("Há dados de Sub_id4 mas nenhum no canal pago.")
         return
 
     # ── FILTRO DE PERÍODO ──
