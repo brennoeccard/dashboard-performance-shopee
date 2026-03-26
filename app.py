@@ -181,8 +181,7 @@ def ler_pago():
     r["Impressoes"]=df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
     r["Alcance"]=df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
     r["Cliques_Meta"]=df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
-    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip() if df.shape[1]>8 else ""
-    r["Sub_id4"]=r["Sub_id4"].replace("nan","")
+    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip().replace("nan","").replace("None","") if df.shape[1]>8 else ""
     r=r.dropna(subset=["Data"])
     r=r[r["Investimento"]>0]
     return r
@@ -308,15 +307,15 @@ def render_publicos(df_raw, df_pago_raw):
         ticket    = comissao/vendas if vendas>0 else 0
 
         # Investimento: df_pago_raw filtrado por Sub_id4 + período
+        # Mesma lógica do pago principal + subcamada Sub_id4
+        invest = 0.0
         if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
             mask_inv = (
                 (df_pago_raw["Data"].dt.date >= d_ini) &
                 (df_pago_raw["Data"].dt.date <= d_fim) &
-                (df_pago_raw["Sub_id4"] == pub)
+                (df_pago_raw["Sub_id4"].astype(str).str.strip() == str(pub).strip())
             )
             invest = df_pago_raw[mask_inv]["Investimento"].sum()
-        else:
-            invest = 0.0
 
         # Métricas de campanha do df_pago_raw (impressoes, alcance, cliques_meta)
         if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
@@ -458,7 +457,8 @@ def render_publicos(df_raw, df_pago_raw):
 
     col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão"}
     col_k = col_map[sel_met]
-    df_graf = df_m[["Público",col_k]].dropna()
+    df_graf = df_m[["Público",col_k]].dropna().copy()
+    df_graf[col_k] = pd.to_numeric(df_graf[col_k], errors="coerce")
 
     cor_campeao = [("#bd6d34" if r["Público"]==campeao else "#9c5834") for _,r in df_graf.iterrows()]
     fig = go.Figure(go.Bar(
@@ -475,11 +475,17 @@ def render_publicos(df_raw, df_pago_raw):
     df_rad = df_m[["Público"]+rad_cols].dropna()
 
     if len(df_rad) >= 2:
-        # Normalizar cada métrica 0-100
+        # Normalizar cada métrica 0-100 (CAC e CPM: invertidos — menor é melhor)
+        inverted_metrics = {"CAC","CPM","CPC"}
         df_norm = df_rad.copy()
         for c in rad_cols:
-            mn,mx = df_rad[c].min(), df_rad[c].max()
-            df_norm[c] = ((df_rad[c]-mn)/(mx-mn)*100).round(1) if mx>mn else 50.0
+            col_num = pd.to_numeric(df_rad[c], errors="coerce").fillna(0)
+            mn,mx = col_num.min(), col_num.max()
+            if mx > mn:
+                norm = (col_num - mn) / (mx - mn) * 100
+                df_norm[c] = (100 - norm).round(1) if c in inverted_metrics else norm.round(1)
+            else:
+                df_norm[c] = 50.0
 
         fig_r = go.Figure()
         for idx2, row2 in df_norm.iterrows():
