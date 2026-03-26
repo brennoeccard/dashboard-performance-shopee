@@ -1231,4 +1231,9 @@ def main():
     st.markdown('<div class="footer">🔓 <strong style="color:#bd6d34;">DESTRAVA</strong> <span style="color:#c5936d;">por Carol Matos</span></div>',unsafe_allow_html=True)
 
 if __name__=="__main__":
+
+    st.write("df_pago_raw shape:", df_pago_raw.shape)
+st.write("colunas:", df_pago_raw.columns.tolist())
+st.write("Sub_id4 únicos:", df_pago_raw["Sub_id4"].unique().tolist() if "Sub_id4" in df_pago_raw.columns else "COLUNA NÃO EXISTE")
+st.write(df_pago_raw.head(10))
     main()
