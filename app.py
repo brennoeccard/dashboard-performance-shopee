@@ -239,19 +239,6 @@ def render_publicos(df_raw, df_pago_raw):
 
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
 
-    # ── DEBUG TEMPORÁRIO — apagar depois ──
-    with st.expander("🔍 DEBUG", expanded=True):
-        st.write("**df_pago_raw shape:**", df_pago_raw.shape)
-        st.write("**colunas:**", df_pago_raw.columns.tolist())
-        if "Sub_id4" in df_pago_raw.columns:
-            st.write("**Sub_id4 únicos no pago_raw:**", df_pago_raw["Sub_id4"].unique().tolist())
-            st.write("**linhas com Sub_id4 preenchido:**", int((df_pago_raw["Sub_id4"] != "").sum()))
-        else:
-            st.error("Sub_id4 NÃO EXISTE no df_pago_raw!")
-        st.write("**df_raw Sub_id4 únicos:**", df_raw["Sub_id4"].unique().tolist() if "Sub_id4" in df_raw.columns else "NÃO EXISTE")
-        st.dataframe(df_pago_raw.tail(10))
-    # ── FIM DEBUG ──
-
     if "Sub_id4" not in df_raw.columns:
         df_p = pd.DataFrame()
     else:
