@@ -142,14 +142,14 @@ def autenticar():
 @st.cache_data(ttl=300)
 def ler_dados():
     svc=autenticar()
-    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_NAME}!A1:H").execute()
+    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_NAME}!A1:I").execute()
     vals=res.get("values",[])
     if len(vals)<2: return pd.DataFrame()
     cab=vals[0]; linhas=vals[1:]; mc=len(cab)
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=cab)
     # Rename por posicao (cabecalho pode variar, ex: "Clique" vs "Cliques")
-    nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao"]
+    nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao","Sub_id4"]
     df=df.rename(columns={df.columns[i]:nomes[i] for i in range(min(len(df.columns),len(nomes)))})
     for col in ["Cliques","Vendas","Comissao"]: df[col]=df[col].apply(parse_num)
     df["Data"]=pd.to_datetime(df["Data"],errors="coerce")
@@ -157,6 +157,8 @@ def ler_dados():
     df["Sub_id2"]=df["Sub_id2"].fillna("").str.strip().str.lower()
     df["Sub_id1"]=df["Sub_id1"].fillna("").str.strip()
     df["Sub_id3"]=df["Sub_id3"].fillna("").str.strip()
+    if "Sub_id4" in df.columns: df["Sub_id4"]=df["Sub_id4"].fillna("").str.strip()
+    else: df["Sub_id4"]=""
     return df
 
 @st.cache_data(ttl=300)
@@ -226,11 +228,292 @@ def check_login():
         return False
     return True
 
+
+def render_publicos(df_raw, df_pago_raw):
+    """Página de análise de teste de públicos (Sub_id4)."""
+    from datetime import date, timedelta
+
+    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
+
+    # Verificar se há dados de Sub_id4
+    if "Sub_id4" not in df_raw.columns or df_raw["Sub_id4"].replace("","nan").replace(None,"nan").pipe(lambda s: (s=="nan").all()):
+        st.markdown('''<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:32px;text-align:center;margin-top:40px;">
+        <div style="font-size:40px;margin-bottom:12px;">📭</div>
+        <div style="color:#f6e8d8;font-size:16px;font-weight:500;">Sem dados de públicos ainda</div>
+        <div style="color:#c5936d;font-size:13px;margin-top:8px;">O Sub_id4 ainda não foi preenchido. Quando o script correr com campanhas segmentadas por público, os dados aparecerão aqui.</div>
+        </div>''', unsafe_allow_html=True)
+        return
+
+    # Filtrar só linhas com Sub_id4 preenchido e canal pago
+    df_p = df_raw[(df_raw["Sub_id4"].str.strip() != "") & (df_raw["Sub_id2"].str.lower() == "pago")].copy()
+
+    if df_p.empty:
+        st.warning("Há dados de Sub_id4 mas nenhum no canal pago.")
+        return
+
+    # ── FILTRO DE PERÍODO ──
+    data_min = df_p["Data"].min().date()
+    data_max_d = df_p["Data"].max().date()
+    hoje = date.today()
+    ontem = hoje - timedelta(days=1)
+
+    if "pub_preset" not in st.session_state: st.session_state.pub_preset = "all"
+    pp = st.session_state.get("pub_preset","all")
+    ref = ontem
+    if   pp=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
+    elif pp=="14d": d_ini_def=max(ref-timedelta(days=13),data_min)
+    elif pp=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
+    else:           d_ini_def=data_min
+    d_fim_def=ontem
+
+    with st.expander("🎛️ Filtros",expanded=False):
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>',unsafe_allow_html=True)
+        pb1,pb2,pb3,pb4=st.columns(4)
+        with pb1:
+            if st.button("7 dias",use_container_width=True,key="pb7"): st.session_state.pub_preset="7d"; st.rerun()
+        with pb2:
+            if st.button("14 dias",use_container_width=True,key="pb14"): st.session_state.pub_preset="14d"; st.rerun()
+        with pb3:
+            if st.button("30 dias",use_container_width=True,key="pb30"): st.session_state.pub_preset="30d"; st.rerun()
+        with pb4:
+            if st.button("Tudo",use_container_width=True,key="pba"): st.session_state.pub_preset="all"; st.rerun()
+        pdatas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=ontem,label_visibility="collapsed",key="pub_datas")
+        d_ini,d_fim=(pdatas if isinstance(pdatas,tuple) and len(pdatas)==2 else (d_ini_def,d_fim_def))
+
+    # Filtrar período
+    mask = (df_p["Data"].dt.date >= d_ini) & (df_p["Data"].dt.date <= d_fim)
+    df_p = df_p[mask].copy()
+
+    if df_p.empty:
+        st.warning("Sem dados de públicos no período seleccionado.")
+        return
+
+    # Investimento por público (vem do df_pago_raw filtrado por Sub_id4)
+    # Sub_id4 não está no df_pago_raw directamente — vem do df_raw (Resultados Shopee)
+    # Cruzar: para cada público (Sub_id4), somar investimento do df_pago_raw pelo mesmo período/Sub_id1
+    publicos = sorted(df_p["Sub_id4"].unique())
+    n_dias_periodo = max((d_fim - d_ini).days + 1, 1)
+
+    # Métricas por público
+    rows = []
+    for pub in publicos:
+        df_pub = df_p[df_p["Sub_id4"] == pub]
+        vendas    = df_pub["Vendas"].sum()
+        comissao  = df_pub["Comissao"].sum()
+        cliques   = df_pub["Cliques"].sum()
+        ctr       = vendas/cliques if cliques>0 else 0
+        ticket    = comissao/vendas if vendas>0 else 0
+
+        # Investimento: pago_raw filtrado por Sub_id1 que pertence a este público
+        sub_ids1_pub = df_pub["Sub_id1"].unique()
+        if not df_pago_raw.empty:
+            mask_inv = (
+                (df_pago_raw["Data"].dt.date >= d_ini) &
+                (df_pago_raw["Data"].dt.date <= d_fim) &
+                (df_pago_raw["Sub_id1"].isin(sub_ids1_pub))
+            )
+            invest = df_pago_raw[mask_inv]["Investimento"].sum()
+        else:
+            invest = 0.0
+
+        lucro  = comissao - invest
+        roi    = (comissao - invest) / invest if invest > 0 else None
+        cac    = invest / vendas if vendas > 0 else None
+        rpc    = comissao / cliques if cliques > 0 else 0  # receita por clique
+
+        rows.append({
+            "Público":   pub,
+            "Vendas":    int(vendas),
+            "Comissão":  round(comissao,2),
+            "Investimento": round(invest,2),
+            "Lucro":     round(lucro,2),
+            "ROI":       round(roi,2) if roi is not None else None,
+            "CAC":       round(cac,2) if cac is not None else None,
+            "Cliques":   int(cliques),
+            "CTR":       round(ctr*100,2),
+            "Ticket":    round(ticket,2),
+            "RPC":       round(rpc,2),
+        })
+
+    df_m = pd.DataFrame(rows)
+    n_publicos = len(df_m)
+
+    # ── CAMPEÃO ──
+    if not df_m.empty and df_m["ROI"].notna().any():
+        campeao_idx = df_m[df_m["ROI"].notna()]["ROI"].idxmax()
+        campeao = df_m.loc[campeao_idx, "Público"]
+    else:
+        campeao = None
+
+    st.markdown(f'''<div style="margin-bottom:1.5rem;">
+    <span style="color:#c5936d;font-size:12px;">Período: </span>
+    <span style="color:#f6e8d8;font-size:12px;font-weight:500;">{d_ini.strftime("%d/%m/%Y")} → {d_fim.strftime("%d/%m/%Y")}</span>
+    <span style="color:#c5936d;font-size:12px;margin-left:12px;">Públicos activos: </span>
+    <span style="color:#f6e8d8;font-size:12px;font-weight:500;">{n_publicos}</span>
+    </div>''', unsafe_allow_html=True)
+
+    # ── CAMPEÃO DESTAQUE ──
+    if campeao:
+        row_c = df_m[df_m["Público"]==campeao].iloc[0]
+        roi_c = row_c["ROI"]
+        cor_roi = "#7a9e4e" if roi_c>1 else ("#d4a017" if roi_c>=0 else "#c0392b")
+        st.markdown(f'''<div style="background:linear-gradient(135deg,#1a1210,#221a16);border:1px solid #bd6d34;border-radius:12px;padding:16px 20px;margin-bottom:1.5rem;display:flex;align-items:center;gap:16px;">
+        <div style="font-size:28px;">🏆</div>
+        <div>
+            <div style="color:#bd6d34;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Público campeão</div>
+            <div style="color:#f6e8d8;font-size:20px;font-weight:500;margin-top:2px;">{campeao}</div>
+            <div style="color:#c5936d;font-size:12px;margin-top:2px;">
+                ROI <span style="color:{cor_roi};font-weight:500;">{roi_c:.2f}</span> &nbsp;·&nbsp;
+                {row_c["Vendas"]} vendas &nbsp;·&nbsp;
+                CAC R${row_c["CAC"]:.2f} &nbsp;·&nbsp;
+                CTR {row_c["CTR"]:.2f}%
+            </div>
+        </div>
+        </div>''', unsafe_allow_html=True)
+
+    # ── CARDS POR PÚBLICO ──
+    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Comparação por público</div>', unsafe_allow_html=True)
+
+    cols = st.columns(n_publicos)
+    for i, row in df_m.iterrows():
+        pub = row["Público"]
+        eh_campeao = pub == campeao
+        roi_val = row["ROI"]
+        if roi_val is None:
+            cor_roi_card = "#bd6d34"
+            roi_txt = "N/A"
+        else:
+            cor_roi_card = "#7a9e4e" if roi_val>1 else ("#d4a017" if roi_val>=0 else "#c0392b")
+            roi_txt = f"{roi_val:.2f}"
+
+        border_col = "#bd6d34" if eh_campeao else "#3a2c28"
+        border_w   = "2px" if eh_campeao else "1px"
+        trophy     = " 🏆" if eh_campeao else ""
+
+        with cols[i]:
+            st.markdown(f'''<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:14px 16px;border:{border_w} solid {border_col};height:100%;">
+            <div style="color:#bd6d34;font-size:13px;font-weight:600;margin-bottom:10px;">{pub}{trophy}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Vendas</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{row["Vendas"]}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Comissão</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Comissão"]:.0f}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Investimento</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Investimento"]:.0f}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Lucro</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;color:{"#7a9e4e" if row["Lucro"]>=0 else "#c0392b"};">R${row["Lucro"]:.0f}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">ROI</div><div style="color:{cor_roi_card};font-size:17px;font-weight:500;">{roi_txt}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">CAC</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{"R$"+str(row["CAC"]) if row["CAC"] else "N/A"}</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">CTR</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{row["CTR"]:.2f}%</div></div>
+                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Ticket</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Ticket"]:.2f}</div></div>
+            </div>
+            </div>''', unsafe_allow_html=True)
+
+    # ── GRÁFICOS COMPARATIVOS ──
+    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Gráficos comparativos</div>', unsafe_allow_html=True)
+
+    import plotly.graph_objects as go
+    import plotly.express as px
+    THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+                 xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),
+                 yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
+    CORES = ["#bd6d34","#c5936d","#9c5834","#d2b095","#562d1d","#f6e8d8"]
+
+    metricas_graf = ["ROI","CAC","CTR","Ticket","Vendas","Comissão"]
+    sel_met = st.selectbox("Métrica para comparar",metricas_graf,key="pub_metrica")
+
+    col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão"}
+    col_k = col_map[sel_met]
+    df_graf = df_m[["Público",col_k]].dropna()
+
+    cor_campeao = [("#bd6d34" if r["Público"]==campeao else "#9c5834") for _,r in df_graf.iterrows()]
+    fig = go.Figure(go.Bar(
+        x=df_graf["Público"], y=df_graf[col_k],
+        marker_color=cor_campeao, text=df_graf[col_k].round(2),
+        textposition="outside", width=0.5
+    ))
+    fig.update_layout(title=f"{sel_met} por público",**THEME,height=300,showlegend=False,margin=dict(t=40,b=0,l=0,r=0))
+    st.plotly_chart(fig,use_container_width=True)
+
+    # Radar / spider — comparação multi-métrica (normalizado 0-100)
+    st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">Comparação multi-métrica (normalizado)</div>', unsafe_allow_html=True)
+    rad_cols = ["ROI","CTR","Ticket","RPC"]
+    df_rad = df_m[["Público"]+rad_cols].dropna()
+
+    if len(df_rad) >= 2:
+        # Normalizar cada métrica 0-100
+        df_norm = df_rad.copy()
+        for c in rad_cols:
+            mn,mx = df_rad[c].min(), df_rad[c].max()
+            df_norm[c] = ((df_rad[c]-mn)/(mx-mn)*100).round(1) if mx>mn else 50.0
+
+        fig_r = go.Figure()
+        for idx2, row2 in df_norm.iterrows():
+            pub2 = row2["Público"]
+            vals2 = [row2[c] for c in rad_cols] + [row2[rad_cols[0]]]
+            cats2 = rad_cols + [rad_cols[0]]
+            cor2  = CORES[idx2 % len(CORES)]
+            fig_r.add_trace(go.Scatterpolar(
+                r=vals2, theta=cats2, fill="toself",
+                name=pub2, line_color=cor2, opacity=0.7
+            ))
+        fig_r.update_layout(
+            polar=dict(bgcolor="#1a1210",radialaxis=dict(visible=True,range=[0,100],gridcolor="#3a2c28",color="#c5936d"),angularaxis=dict(color="#c5936d")),
+            paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+            legend=dict(bgcolor="#1a1210",bordercolor="#3a2c28",borderwidth=1),
+            height=360,margin=dict(t=20,b=20,l=40,r=40)
+        )
+        st.plotly_chart(fig_r,use_container_width=True)
+
+    # ── EVOLUÇÃO DIÁRIA ──
+    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Evolução diária por público</div>', unsafe_allow_html=True)
+    met_evo = st.selectbox("Métrica diária",["Vendas","Comissao","Cliques"],key="pub_evo")
+    df_daily_pub = df_p.groupby(["Data","Sub_id4"]).agg(
+        Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")
+    ).reset_index()
+
+    fig_evo = go.Figure()
+    for i2,pub2 in enumerate(publicos):
+        df_sub = df_daily_pub[df_daily_pub["Sub_id4"]==pub2]
+        fig_evo.add_trace(go.Scatter(
+            x=df_sub["Data"], y=df_sub[met_evo],
+            name=pub2, mode="lines+markers",
+            line=dict(color=CORES[i2%len(CORES)],width=2),
+            marker=dict(size=5)
+        ))
+    fig_evo.update_layout(title=f"{met_evo} diário por público",hovermode="x unified",**THEME,height=280,margin=dict(t=40,b=0,l=0,r=0))
+    st.plotly_chart(fig_evo,use_container_width=True)
+
+    # ── TABELA RESUMO ──
+    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Tabela completa</div>', unsafe_allow_html=True)
+    df_tabela = df_m.copy()
+    df_tabela["ROI"]  = df_tabela["ROI"].apply(lambda x: f"{x:.2f}" if x is not None else "N/A")
+    df_tabela["CAC"]  = df_tabela["CAC"].apply(lambda x: f"R${x:.2f}" if x is not None else "N/A")
+    df_tabela["CTR"]  = df_tabela["CTR"].apply(lambda x: f"{x:.2f}%")
+    df_tabela["Ticket"] = df_tabela["Ticket"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Comissão"] = df_tabela["Comissão"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Investimento"] = df_tabela["Investimento"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Lucro"] = df_tabela["Lucro"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["RPC"]  = df_tabela["RPC"].apply(lambda x: f"R${x:.2f}")
+    st.dataframe(df_tabela,use_container_width=True,hide_index=True)
+
+    st.markdown('<div style="margin-top:2rem;padding:10px 16px;background:#1a1210;border-radius:8px;border:1px solid #3a2c28;color:#c5936d;font-size:11px;">RPC = Receita Por Clique (Comissão / Cliques) — mede a eficiência monetária de cada clique do público.</div>', unsafe_allow_html=True)
+
 def main():
     if not check_login(): return
 
     with st.sidebar:
-        st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">ATALHOS</div>',unsafe_allow_html=True)
+        # Navegação de página
+        if "pagina" not in st.session_state: st.session_state.pagina="dashboard"
+        st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">NAVEGAÇÃO</div>',unsafe_allow_html=True)
+        col_nav1,col_nav2=st.columns(2)
+        with col_nav1:
+            if st.button("📊 Dashboard",use_container_width=True,
+                type="primary" if st.session_state.pagina=="dashboard" else "secondary"):
+                st.session_state.pagina="dashboard"; st.rerun()
+        with col_nav2:
+            if st.button("👥 Públicos",use_container_width=True,
+                type="primary" if st.session_state.pagina=="publicos" else "secondary"):
+                st.session_state.pagina="publicos"; st.rerun()
+        st.markdown("---")
+        if st.session_state.pagina=="dashboard":
+            st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">ATALHOS</div>',unsafe_allow_html=True)
         st.markdown("""
         <a href="#kpis" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">💰 KPIs Gerais</a>
         <a href="#pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📣 Campanha Pago</a>
@@ -253,6 +536,13 @@ def main():
 
     if df_raw.empty:
         st.error("Sem dados na planilha Resultados Shopee."); return
+
+    # ── ROTEADOR DE PÁGINAS ──
+    pagina_actual = st.session_state.get("pagina","dashboard")
+
+    if pagina_actual == "publicos":
+        render_publicos(df_raw, df_pago_raw)
+        return
 
     # ── FILTROS ──
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
