@@ -12,6 +12,8 @@ SPREADSHEET_ID  = "1qhdazuPU5B36vwRyc8Be3h9fgXok1dSuDT8mvMBD2eI"
 SHEET_NAME      = "Resultados Shopee"
 SHEET_PAGO      = "Resultados Pago"
 SHEET_AWARENESS = "Resultado Awareness"
+SHEET_HORARIO   = "Insights_Horario"
+SHEET_CATEGORIA = "Insights_Categoria"
 SCOPES          = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 st.set_page_config(page_title="Dashboard de Performance", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
@@ -85,7 +87,6 @@ def delta_html(val,ref,inverted=False):
         if pct>0: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(pct)
         elif pct<0: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
     return '<span class="metric-delta-neu">= igual semana ant.</span>'
-
 
 def sparkline(df_d,col,color="#bd6d34"):
     if col not in df_d.columns or df_d[col].sum()==0: return None
@@ -176,8 +177,6 @@ def ler_pago():
     r["Impressoes"]=df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
     r["Alcance"]=df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
     r["Cliques_Meta"]=df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
-    # Coluna 8 = CTR Meta (ignorada nos cálculos, já calculamos no código)
-    # Coluna 9 = Sub_id4 (público do teste)
     r["Sub_id4"]=df.iloc[:,9].astype(str).str.strip().apply(lambda x: "" if x.lower() in ["nan","none",""] else x) if df.shape[1]>9 else ""
     r=r.dropna(subset=["Data"])
     r=r[r["Investimento"]>0]
@@ -205,6 +204,50 @@ def ler_awareness():
     r=r[r["Investimento_aw"]>0]
     return r
 
+@st.cache_data(ttl=300)
+def ler_horario():
+    svc=autenticar()
+    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_HORARIO}!A1:K").execute()
+    vals=res.get("values",[])
+    if len(vals)<2: return pd.DataFrame()
+    cab=vals[0]; linhas=vals[1:]; mc=len(cab)
+    ln=[l+[""]*(mc-len(l)) for l in linhas]
+    df=pd.DataFrame(ln,columns=cab)
+    df.columns=[c.strip() for c in df.columns]
+    rename={"ID do Pedido":"ID_Pedido","Status do Pedido":"Status","Sub_id1":"Sub_id1","Sub_id2":"Sub_id2",
+            "Sub_id3":"Sub_id3","Sub_id4":"Sub_id4","Hora do Clique":"Hora_Clique","Hora do Pedido":"Hora_Pedido",
+            "Dia da Semana":"DiaSemana","Hora do Dia":"HoraDia","Latência (h)":"Latencia_h"}
+    df=df.rename(columns={k:v for k,v in rename.items() if k in df.columns})
+    df["Hora_Pedido"]=pd.to_datetime(df["Hora_Pedido"],errors="coerce")
+    df["Hora_Clique"]=pd.to_datetime(df["Hora_Clique"],errors="coerce")
+    df["Latencia_h"]=df["Latencia_h"].astype(str).str.replace(",",".").pipe(pd.to_numeric,errors="coerce")
+    df["HoraDia"]=df["HoraDia"].astype(str).str.replace("h","").pipe(pd.to_numeric,errors="coerce")
+    for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","DiaSemana","Status"]:
+        if col in df.columns: df[col]=df[col].fillna("").str.strip()
+    return df
+
+@st.cache_data(ttl=300)
+def ler_categoria():
+    svc=autenticar()
+    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_CATEGORIA}!A1:M").execute()
+    vals=res.get("values",[])
+    if len(vals)<2: return pd.DataFrame()
+    cab=vals[0]; linhas=vals[1:]; mc=len(cab)
+    ln=[l+[""]*(mc-len(l)) for l in linhas]
+    df=pd.DataFrame(ln,columns=cab)
+    df.columns=[c.strip() for c in df.columns]
+    rename={"ID do Pedido":"ID_Pedido","Status do Pedido":"Status","Sub_id1":"Sub_id1","Sub_id2":"Sub_id2",
+            "Sub_id3":"Sub_id3","Sub_id4":"Sub_id4","Categoria L1":"Cat_L1","Categoria L2":"Cat_L2",
+            "Categoria L3":"Cat_L3","Nome do Item":"Produto","Preço (R$)":"Preco",
+            "Qtd":"Qtd","Comissão do Item (R$)":"Comissao_item"}
+    df=df.rename(columns={k:v for k,v in rename.items() if k in df.columns})
+    for col in ["Preco","Comissao_item"]:
+        if col in df.columns: df[col]=df[col].astype(str).str.replace(",",".").pipe(pd.to_numeric,errors="coerce").fillna(0)
+    if "Qtd" in df.columns: df["Qtd"]=pd.to_numeric(df["Qtd"],errors="coerce").fillna(0)
+    for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","Cat_L1","Cat_L2","Cat_L3","Produto","Status"]:
+        if col in df.columns: df[col]=df[col].fillna("").str.strip()
+    return df
+
 def check_login():
     try: users=dict(st.secrets["users"])
     except: users={"brenno":"destr@vA!"}
@@ -225,50 +268,25 @@ def check_login():
         return False
     return True
 
-
-# ══════════════════════════════════════════════════════════════════════
-# BUG 1 FIX — Teste de Públicos
-# PROBLEMA ORIGINAL: df_pago_raw não tem Sub_id4 → cruzamento nunca batia
-# FIX: cruzar por Sub_id1 (chave comum entre df_raw e df_pago_raw),
-#      agrupando as métricas de campanha pela soma dos Sub_id1 presentes
-#      em cada público (Sub_id4), dentro do período seleccionado.
-# ══════════════════════════════════════════════════════════════════════
 def render_publicos(df_raw, df_pago_raw):
-    """Página de análise de teste de públicos (Sub_id4)."""
     from datetime import date, timedelta
-
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
-
     if "Sub_id4" not in df_raw.columns:
         df_p = pd.DataFrame()
     else:
-        df_p = df_raw[
-            (df_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") &
-            (df_raw["Sub_id2"].str.lower() == "pago")
-        ].copy()
-
+        df_p = df_raw[(df_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") & (df_raw["Sub_id2"].str.lower() == "pago")].copy()
     if df_p.empty:
-        st.markdown('''<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:32px;text-align:center;margin-top:40px;">
-        <div style="font-size:40px;margin-bottom:12px;">📭</div>
-        <div style="color:#f6e8d8;font-size:16px;font-weight:500;">Sem dados de públicos ainda</div>
-        <div style="color:#c5936d;font-size:13px;margin-top:8px;">Quando o script correr com campanhas segmentadas por público (Sub_id4 preenchido), os dados aparecerão aqui.</div>
-        </div>''', unsafe_allow_html=True)
+        st.markdown('''<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:32px;text-align:center;margin-top:40px;"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">Sem dados de públicos ainda</div><div style="color:#c5936d;font-size:13px;margin-top:8px;">Quando o script correr com campanhas segmentadas por público (Sub_id4 preenchido), os dados aparecerão aqui.</div></div>''', unsafe_allow_html=True)
         return
-
-    # ── FILTRO DE PERÍODO ──
     data_min = df_p["Data"].min().date()
-    hoje = date.today()
-    ontem = hoje - timedelta(days=1)
-
+    hoje = date.today(); ontem = hoje - timedelta(days=1)
     if "pub_preset" not in st.session_state: st.session_state.pub_preset = "all"
-    pp = st.session_state.get("pub_preset","all")
-    ref = ontem
+    pp = st.session_state.get("pub_preset","all"); ref = ontem
     if   pp=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
     elif pp=="14d": d_ini_def=max(ref-timedelta(days=13),data_min)
     elif pp=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
     else:           d_ini_def=data_min
     d_fim_def=ontem
-
     with st.expander("🎛️ Filtros",expanded=False):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>',unsafe_allow_html=True)
         pb1,pb2,pb3,pb4=st.columns(4)
@@ -282,201 +300,74 @@ def render_publicos(df_raw, df_pago_raw):
             if st.button("Tudo",use_container_width=True,key="pba"): st.session_state.pub_preset="all"; st.rerun()
         pdatas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=ontem,label_visibility="collapsed",key="pub_datas")
         d_ini,d_fim=(pdatas if isinstance(pdatas,tuple) and len(pdatas)==2 else (d_ini_def,d_fim_def))
-
     mask = (df_p["Data"].dt.date >= d_ini) & (df_p["Data"].dt.date <= d_fim)
     df_p = df_p[mask].copy()
-
     if df_p.empty:
-        st.warning("Sem dados de públicos no período seleccionado.")
-        return
-
+        st.warning("Sem dados de públicos no período seleccionado."); return
     publicos = sorted(df_p["Sub_id4"].unique())
-    n_dias_periodo = max((d_fim - d_ini).days + 1, 1)
-
-    # ── LÓGICA CORRECTA ──
-    # df_pago_raw já tem Sub_id4 em algumas linhas.
-    # Filtrar só as linhas COM Sub_id4 preenchido e dentro do período.
-    # As métricas de campanha (Invest, Impressões, Alcance, Cliques Meta)
-    # vêm directamente do df_pago_raw agrupado por Sub_id4.
-    # As métricas Shopee (Vendas, Comissão, Cliques) vêm do df_raw (df_p)
-    # que já está filtrado por Sub_id4 via Resultados Shopee.
     if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
-        df_pago_pub = df_pago_raw[
-            (df_pago_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") &
-            (df_pago_raw["Data"].dt.date >= d_ini) &
-            (df_pago_raw["Data"].dt.date <= d_fim)
-        ].copy()
-        # Agregar métricas de campanha por Sub_id4
-        camp_por_pub = df_pago_pub.groupby("Sub_id4").agg(
-            Investimento=("Investimento","sum"),
-            Impressoes=("Impressoes","sum"),
-            Alcance=("Alcance","sum"),
-            Cliques_Meta=("Cliques_Meta","sum"),
-        ).reset_index()
+        df_pago_pub = df_pago_raw[(df_pago_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") & (df_pago_raw["Data"].dt.date >= d_ini) & (df_pago_raw["Data"].dt.date <= d_fim)].copy()
+        camp_por_pub = df_pago_pub.groupby("Sub_id4").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
     else:
-        df_pago_pub = pd.DataFrame()
         camp_por_pub = pd.DataFrame(columns=["Sub_id4","Investimento","Impressoes","Alcance","Cliques_Meta"])
-
     rows = []
     for pub in publicos:
-        # Métricas Shopee do df_raw
         df_pub = df_p[df_p["Sub_id4"] == pub]
-        vendas    = df_pub["Vendas"].sum()
-        comissao  = df_pub["Comissao"].sum()
-        cliques   = df_pub["Cliques"].sum()
-        ctr       = vendas/cliques if cliques>0 else 0
-        ticket    = comissao/vendas if vendas>0 else 0
-
-        # Métricas de campanha do df_pago_raw agrupado
+        vendas=df_pub["Vendas"].sum(); comissao=df_pub["Comissao"].sum(); cliques=df_pub["Cliques"].sum()
+        ctr=vendas/cliques if cliques>0 else 0; ticket=comissao/vendas if vendas>0 else 0
         row_camp = camp_por_pub[camp_por_pub["Sub_id4"] == pub]
         if not row_camp.empty:
-            invest       = row_camp["Investimento"].iloc[0]
-            impressoes   = row_camp["Impressoes"].iloc[0]
-            alcance      = row_camp["Alcance"].iloc[0]
-            cliques_meta = row_camp["Cliques_Meta"].iloc[0]
+            invest=row_camp["Investimento"].iloc[0]; impressoes=row_camp["Impressoes"].iloc[0]
+            alcance=row_camp["Alcance"].iloc[0]; cliques_meta=row_camp["Cliques_Meta"].iloc[0]
         else:
-            invest = impressoes = alcance = cliques_meta = 0.0
-
-        ctr_meta  = cliques_meta / alcance * 100 if alcance > 0 else 0
-        cpm       = invest / impressoes * 1000 if impressoes > 0 else 0
-        cpc       = invest / cliques_meta if cliques_meta > 0 else 0
-        freq      = impressoes / alcance if alcance > 0 else 0
-        lucro     = comissao - invest
-        roi       = (comissao - invest) / invest if invest > 0 else None
-        cac       = invest / vendas if vendas > 0 else None
-        rpc       = comissao / cliques if cliques > 0 else 0
-
-        rows.append({
-            "Público":      pub,
-            "Vendas":       int(vendas),
-            "Comissão":     round(comissao,2),
-            "Investimento": round(invest,2),
-            "Lucro":        round(lucro,2),
-            "ROI":          round(roi,2) if roi is not None else None,
-            "CAC":          round(cac,2) if cac is not None else None,
-            "Cliques":      int(cliques),
-            "CTR":          round(ctr*100,2),
-            "Ticket":       round(ticket,2),
-            "RPC":          round(rpc,2),
-            "Impressões":   int(impressoes),
-            "Alcance":      int(alcance),
-            "Cliques Meta": int(cliques_meta),
-            "CTR Meta":     round(ctr_meta,2),
-            "CPM":          round(cpm,2),
-            "CPC":          round(cpc,2),
-            "Frequência":   round(freq,2),
-        })
-
+            invest=impressoes=alcance=cliques_meta=0.0
+        ctr_meta=cliques_meta/alcance*100 if alcance>0 else 0; cpm=invest/impressoes*1000 if impressoes>0 else 0
+        cpc=invest/cliques_meta if cliques_meta>0 else 0; freq=impressoes/alcance if alcance>0 else 0
+        lucro=comissao-invest; roi=(comissao-invest)/invest if invest>0 else None
+        cac=invest/vendas if vendas>0 else None; rpc=comissao/cliques if cliques>0 else 0
+        rows.append({"Público":pub,"Vendas":int(vendas),"Comissão":round(comissao,2),"Investimento":round(invest,2),
+            "Lucro":round(lucro,2),"ROI":round(roi,2) if roi is not None else None,
+            "CAC":round(cac,2) if cac is not None else None,"Cliques":int(cliques),"CTR":round(ctr*100,2),
+            "Ticket":round(ticket,2),"RPC":round(rpc,2),"Impressões":int(impressoes),"Alcance":int(alcance),
+            "Cliques Meta":int(cliques_meta),"CTR Meta":round(ctr_meta,2),"CPM":round(cpm,2),
+            "CPC":round(cpc,2),"Frequência":round(freq,2)})
     df_m = pd.DataFrame(rows)
     n_publicos = len(df_m)
-
     if not df_m.empty and df_m["ROI"].notna().any():
-        campeao_idx = df_m[df_m["ROI"].notna()]["ROI"].idxmax()
-        campeao = df_m.loc[campeao_idx, "Público"]
-    else:
-        campeao = None
-
-    st.markdown(f'''<div style="margin-bottom:1.5rem;">
-    <span style="color:#c5936d;font-size:12px;">Período: </span>
-    <span style="color:#f6e8d8;font-size:12px;font-weight:500;">{d_ini.strftime("%d/%m/%Y")} → {d_fim.strftime("%d/%m/%Y")}</span>
-    <span style="color:#c5936d;font-size:12px;margin-left:12px;">Públicos activos: </span>
-    <span style="color:#f6e8d8;font-size:12px;font-weight:500;">{n_publicos}</span>
-    </div>''', unsafe_allow_html=True)
-
+        campeao_idx = df_m[df_m["ROI"].notna()]["ROI"].idxmax(); campeao = df_m.loc[campeao_idx, "Público"]
+    else: campeao = None
+    st.markdown(f'''<div style="margin-bottom:1.5rem;"><span style="color:#c5936d;font-size:12px;">Período: </span><span style="color:#f6e8d8;font-size:12px;font-weight:500;">{d_ini.strftime("%d/%m/%Y")} → {d_fim.strftime("%d/%m/%Y")}</span><span style="color:#c5936d;font-size:12px;margin-left:12px;">Públicos activos: </span><span style="color:#f6e8d8;font-size:12px;font-weight:500;">{n_publicos}</span></div>''', unsafe_allow_html=True)
     if campeao:
-        row_c = df_m[df_m["Público"]==campeao].iloc[0]
-        roi_c = row_c["ROI"]
+        row_c = df_m[df_m["Público"]==campeao].iloc[0]; roi_c = row_c["ROI"]
         cor_roi = "#7a9e4e" if roi_c>1 else ("#d4a017" if roi_c>=0 else "#c0392b")
-        st.markdown(f'''<div style="background:linear-gradient(135deg,#1a1210,#221a16);border:1px solid #bd6d34;border-radius:12px;padding:16px 20px;margin-bottom:1.5rem;display:flex;align-items:center;gap:16px;">
-        <div style="font-size:28px;">🏆</div>
-        <div>
-            <div style="color:#bd6d34;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Público campeão</div>
-            <div style="color:#f6e8d8;font-size:20px;font-weight:500;margin-top:2px;">{campeao}</div>
-            <div style="color:#c5936d;font-size:12px;margin-top:2px;">
-                ROI <span style="color:{cor_roi};font-weight:500;">{roi_c:.2f}</span> &nbsp;·&nbsp;
-                {row_c["Vendas"]} vendas &nbsp;·&nbsp;
-                CAC R${row_c["CAC"]:.2f} &nbsp;·&nbsp;
-                CTR {row_c["CTR"]:.2f}%
-            </div>
-        </div>
-        </div>''', unsafe_allow_html=True)
-
+        st.markdown(f'''<div style="background:linear-gradient(135deg,#1a1210,#221a16);border:1px solid #bd6d34;border-radius:12px;padding:16px 20px;margin-bottom:1.5rem;display:flex;align-items:center;gap:16px;"><div style="font-size:28px;">🏆</div><div><div style="color:#bd6d34;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Público campeão</div><div style="color:#f6e8d8;font-size:20px;font-weight:500;margin-top:2px;">{campeao}</div><div style="color:#c5936d;font-size:12px;margin-top:2px;">ROI <span style="color:{cor_roi};font-weight:500;">{roi_c:.2f}</span> &nbsp;·&nbsp; {row_c["Vendas"]} vendas &nbsp;·&nbsp; CAC R${row_c["CAC"]:.2f} &nbsp;·&nbsp; CTR {row_c["CTR"]:.2f}%</div></div></div>''', unsafe_allow_html=True)
     st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Comparação por público</div>', unsafe_allow_html=True)
-
     cols = st.columns(n_publicos)
-    for i, row in df_m.iterrows():
-        pub = row["Público"]
-        eh_campeao = pub == campeao
-        roi_val = row["ROI"]
-        if roi_val is None:
-            cor_roi_card = "#bd6d34"
-            roi_txt = "N/A"
-        else:
-            cor_roi_card = "#7a9e4e" if roi_val>1 else ("#d4a017" if roi_val>=0 else "#c0392b")
-            roi_txt = f"{roi_val:.2f}"
-
-        border_col = "#bd6d34" if eh_campeao else "#3a2c28"
-        border_w   = "2px" if eh_campeao else "1px"
-        trophy     = " 🏆" if eh_campeao else ""
-
-        with cols[i]:
-            lucro_cor = "#7a9e4e" if row["Lucro"]>=0 else "#c0392b"
-            cac_txt = f'R${row["CAC"]:.2f}' if row["CAC"] else "N/A"
-            st.markdown(f'''<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:14px 16px;border:{border_w} solid {border_col};height:100%;">
-            <div style="color:#bd6d34;font-size:13px;font-weight:600;margin-bottom:10px;">{pub}{trophy}</div>
-            <div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Resultados</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Vendas</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Vendas"]}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Comissão</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Comissão"]:.2f}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Investimento</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Investimento"]:.2f}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Lucro</div><div style="color:{lucro_cor};font-size:16px;font-weight:500;">R${row["Lucro"]:.2f}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">ROI</div><div style="color:{cor_roi_card};font-size:16px;font-weight:500;">{roi_txt}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CAC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{cac_txt}</div></div>
-            </div>
-            <div style="border-top:0.5px solid #3a2c28;padding-top:8px;margin-bottom:6px;">
-            <div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Campanha</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Impressões</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Impressões"]:,}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Alcance</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Alcance"]:,}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPM</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPM"]:.2f}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Cliques</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Cliques Meta"]:,}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CTR Meta</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["CTR Meta"]:.2f}%</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPC"]:.2f}</div></div>
-                <div style="grid-column:span 2;"><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Frequência</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Frequência"]:.2f}x</div></div>
-            </div></div>
-            </div>''', unsafe_allow_html=True)
-
-    # ── GRÁFICOS COMPARATIVOS ──
-    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Gráficos comparativos</div>', unsafe_allow_html=True)
-
-    import plotly.graph_objects as go
-    THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
-                 xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),
-                 yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
     CORES = ["#bd6d34","#c5936d","#9c5834","#d2b095","#562d1d","#f6e8d8"]
-
+    for i, row in df_m.iterrows():
+        pub = row["Público"]; eh_campeao = pub == campeao
+        roi_val = row["ROI"]
+        if roi_val is None: cor_roi_card = "#bd6d34"; roi_txt = "N/A"
+        else:
+            cor_roi_card = "#7a9e4e" if roi_val>1 else ("#d4a017" if roi_val>=0 else "#c0392b"); roi_txt = f"{roi_val:.2f}"
+        border_col = "#bd6d34" if eh_campeao else "#3a2c28"; border_w = "2px" if eh_campeao else "1px"; trophy = " 🏆" if eh_campeao else ""
+        with cols[i]:
+            lucro_cor = "#7a9e4e" if row["Lucro"]>=0 else "#c0392b"; cac_txt = f'R${row["CAC"]:.2f}' if row["CAC"] else "N/A"
+            st.markdown(f'''<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:14px 16px;border:{border_w} solid {border_col};height:100%;"><div style="color:#bd6d34;font-size:13px;font-weight:600;margin-bottom:10px;">{pub}{trophy}</div><div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Resultados</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;"><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Vendas</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Vendas"]}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Comissão</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Comissão"]:.2f}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Investimento</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Investimento"]:.2f}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Lucro</div><div style="color:{lucro_cor};font-size:16px;font-weight:500;">R${row["Lucro"]:.2f}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">ROI</div><div style="color:{cor_roi_card};font-size:16px;font-weight:500;">{roi_txt}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CAC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{cac_txt}</div></div></div><div style="border-top:0.5px solid #3a2c28;padding-top:8px;margin-bottom:6px;"><div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Campanha</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Impressões</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Impressões"]:,}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Alcance</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Alcance"]:,}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPM</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPM"]:.2f}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Cliques</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Cliques Meta"]:,}</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CTR Meta</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["CTR Meta"]:.2f}%</div></div><div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPC"]:.2f}</div></div><div style="grid-column:span 2;"><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Frequência</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Frequência"]:.2f}x</div></div></div></div></div>''', unsafe_allow_html=True)
+    st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Gráficos comparativos</div>', unsafe_allow_html=True)
+    THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
     metricas_graf = ["ROI","CAC","CTR","CTR Meta","CPM","CPC","Ticket","Vendas","Comissão","Impressões","Alcance"]
     sel_met = st.selectbox("Métrica para comparar",metricas_graf,key="pub_metrica")
-
     col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","CTR Meta":"CTR Meta","CPM":"CPM","CPC":"CPC","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão","Impressões":"Impressões","Alcance":"Alcance"}
     col_k = col_map[sel_met]
     df_graf = df_m[["Público",col_k]].dropna().copy()
     df_graf[col_k] = pd.to_numeric(df_graf[col_k], errors="coerce")
-
     cor_campeao = [("#bd6d34" if r["Público"]==campeao else "#9c5834") for _,r in df_graf.iterrows()]
-    fig = go.Figure(go.Bar(
-        x=df_graf["Público"], y=df_graf[col_k],
-        marker_color=cor_campeao, text=df_graf[col_k].round(2),
-        textposition="outside", width=0.5
-    ))
+    fig = go.Figure(go.Bar(x=df_graf["Público"],y=df_graf[col_k],marker_color=cor_campeao,text=df_graf[col_k].round(2),textposition="outside",width=0.5))
     fig.update_layout(title=f"{sel_met} por público",**THEME,height=300,showlegend=False,margin=dict(t=40,b=0,l=0,r=0))
     st.plotly_chart(fig,use_container_width=True)
-
-    # Radar
-    st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">Comparação multi-métrica (normalizado)</div>', unsafe_allow_html=True)
     rad_cols = ["ROI","CTR Meta","CPM","CAC","Ticket"]
     df_rad = df_m[["Público"]+rad_cols].dropna()
-
     if len(df_rad) >= 2:
         inverted_metrics = {"CAC","CPM","CPC"}
         df_norm = df_rad.copy()
@@ -486,61 +377,317 @@ def render_publicos(df_raw, df_pago_raw):
             if mx > mn:
                 norm = (col_num - mn) / (mx - mn) * 100
                 df_norm[c] = (100 - norm).round(1) if c in inverted_metrics else norm.round(1)
-            else:
-                df_norm[c] = 50.0
-
+            else: df_norm[c] = 50.0
         fig_r = go.Figure()
         for idx2, row2 in df_norm.iterrows():
-            pub2 = row2["Público"]
-            vals2 = [row2[c] for c in rad_cols] + [row2[rad_cols[0]]]
-            cats2 = rad_cols + [rad_cols[0]]
-            cor2  = CORES[idx2 % len(CORES)]
-            fig_r.add_trace(go.Scatterpolar(
-                r=vals2, theta=cats2, fill="toself",
-                name=pub2, line_color=cor2, opacity=0.7
-            ))
-        fig_r.update_layout(
-            polar=dict(bgcolor="#1a1210",radialaxis=dict(visible=True,range=[0,100],gridcolor="#3a2c28",color="#c5936d"),angularaxis=dict(color="#c5936d")),
-            paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
-            legend=dict(bgcolor="#1a1210",bordercolor="#3a2c28",borderwidth=1),
-            height=360,margin=dict(t=20,b=20,l=40,r=40)
-        )
+            pub2 = row2["Público"]; vals2 = [row2[c] for c in rad_cols] + [row2[rad_cols[0]]]; cats2 = rad_cols + [rad_cols[0]]; cor2 = CORES[idx2 % len(CORES)]
+            fig_r.add_trace(go.Scatterpolar(r=vals2,theta=cats2,fill="toself",name=pub2,line_color=cor2,opacity=0.7))
+        fig_r.update_layout(polar=dict(bgcolor="#1a1210",radialaxis=dict(visible=True,range=[0,100],gridcolor="#3a2c28",color="#c5936d"),angularaxis=dict(color="#c5936d")),paper_bgcolor="#0f0d0b",font_color="#f6e8d8",legend=dict(bgcolor="#1a1210",bordercolor="#3a2c28",borderwidth=1),height=360,margin=dict(t=20,b=20,l=40,r=40))
         st.plotly_chart(fig_r,use_container_width=True)
-
-    # ── EVOLUÇÃO DIÁRIA ──
     st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Evolução diária por público</div>', unsafe_allow_html=True)
     met_evo = st.selectbox("Métrica diária",["Vendas","Comissao","Cliques"],key="pub_evo")
-    df_daily_pub = df_p.groupby(["Data","Sub_id4"]).agg(
-        Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")
-    ).reset_index()
-
+    df_daily_pub = df_p.groupby(["Data","Sub_id4"]).agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")).reset_index()
     fig_evo = go.Figure()
     for i2,pub2 in enumerate(publicos):
         df_sub = df_daily_pub[df_daily_pub["Sub_id4"]==pub2]
-        fig_evo.add_trace(go.Scatter(
-            x=df_sub["Data"], y=df_sub[met_evo],
-            name=pub2, mode="lines+markers",
-            line=dict(color=CORES[i2%len(CORES)],width=2),
-            marker=dict(size=5)
-        ))
+        fig_evo.add_trace(go.Scatter(x=df_sub["Data"],y=df_sub[met_evo],name=pub2,mode="lines+markers",line=dict(color=CORES[i2%len(CORES)],width=2),marker=dict(size=5)))
     fig_evo.update_layout(title=f"{met_evo} diário por público",hovermode="x unified",**THEME,height=280,margin=dict(t=40,b=0,l=0,r=0))
     st.plotly_chart(fig_evo,use_container_width=True)
-
-    # ── TABELA RESUMO ──
     st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Tabela completa</div>', unsafe_allow_html=True)
     df_tabela = df_m.copy()
-    df_tabela["ROI"]  = df_tabela["ROI"].apply(lambda x: f"{x:.2f}" if x is not None else "N/A")
-    df_tabela["CAC"]  = df_tabela["CAC"].apply(lambda x: f"R${x:.2f}" if x is not None else "N/A")
-    df_tabela["CTR"]  = df_tabela["CTR"].apply(lambda x: f"{x:.2f}%")
-    df_tabela["Ticket"] = df_tabela["Ticket"].apply(lambda x: f"R${x:.2f}")
-    df_tabela["Comissão"] = df_tabela["Comissão"].apply(lambda x: f"R${x:.2f}")
-    df_tabela["Investimento"] = df_tabela["Investimento"].apply(lambda x: f"R${x:.2f}")
-    df_tabela["Lucro"] = df_tabela["Lucro"].apply(lambda x: f"R${x:.2f}")
-    df_tabela["RPC"]  = df_tabela["RPC"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["ROI"]=df_tabela["ROI"].apply(lambda x: f"{x:.2f}" if x is not None else "N/A")
+    df_tabela["CAC"]=df_tabela["CAC"].apply(lambda x: f"R${x:.2f}" if x is not None else "N/A")
+    df_tabela["CTR"]=df_tabela["CTR"].apply(lambda x: f"{x:.2f}%")
+    df_tabela["Ticket"]=df_tabela["Ticket"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Comissão"]=df_tabela["Comissão"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Investimento"]=df_tabela["Investimento"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["Lucro"]=df_tabela["Lucro"].apply(lambda x: f"R${x:.2f}")
+    df_tabela["RPC"]=df_tabela["RPC"].apply(lambda x: f"R${x:.2f}")
     st.dataframe(df_tabela,use_container_width=True,hide_index=True)
-
     st.markdown('<div style="margin-top:2rem;padding:10px 16px;background:#1a1210;border-radius:8px;border:1px solid #3a2c28;color:#c5936d;font-size:11px;">RPC = Receita Por Clique (Comissão / Cliques) — mede a eficiência monetária de cada clique do público.</div>', unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════
+#  RADAR SHOPEE
+# ══════════════════════════════════════════════════════════════════════
+def render_radar_shopee():
+    ORDEM_DIAS = ["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"]
+    THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+        xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
+    COR_PRINCIPAL = "#bd6d34"
+    CORES = ["#bd6d34","#c5936d","#9c5834","#d2b095","#7a9e4e","#2980b9","#562d1d"]
+
+    def sec(titulo):
+        st.markdown(f'<div style="color:#f6e8d8;font-size:16px;font-weight:600;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid #3a2c28;">{titulo}</div>',unsafe_allow_html=True)
+
+    def card_kpi(label, valor, sub=""):
+        return f'''<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:14px 18px;border-left:4px solid #bd6d34;">
+        <div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{label}</div>
+        <div style="color:#f6e8d8;font-size:22px;font-weight:700;margin-top:4px;">{valor}</div>
+        {"" if not sub else f'<div style="color:#c5936d;font-size:11px;margin-top:2px;">{sub}</div>'}
+        </div>'''
+
+    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📡 Radar Shopee</h1><p style="color:#c5936d;margin:0 0 20px 0;font-size:13px;">Destrava · por Carol Matos · Análise profunda de comportamento</p>',unsafe_allow_html=True)
+
+    with st.spinner("A carregar dados do Radar..."):
+        df_h = ler_horario()
+        df_c = ler_categoria()
+
+    if df_h.empty and df_c.empty:
+        st.markdown('''<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:32px;text-align:center;margin-top:40px;"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="color:#f6e8d8;font-size:16px;">Sem dados no Radar ainda</div><div style="color:#c5936d;font-size:13px;margin-top:8px;">Corre o script atualizar_planilha.py para popular as abas Insights_Horario e Insights_Categoria.</div></div>''', unsafe_allow_html=True)
+        return
+
+    # ── FILTROS ──
+    with st.expander("🎛️ Filtros", expanded=True):
+        canais_disp = sorted([x for x in df_h["Sub_id2"].unique() if x]) if not df_h.empty else []
+        criativos_disp = sorted([x for x in df_h["Sub_id3"].unique() if x]) if not df_h.empty else []
+        status_disp = sorted([x for x in df_h["Status"].unique() if x]) if not df_h.empty else []
+        fc1,fc2,fc3 = st.columns(3)
+        with fc1:
+            st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>',unsafe_allow_html=True)
+            canais_sel = st.multiselect("",canais_disp,default=[],placeholder="Todos",label_visibility="collapsed",key="rs_canal")
+        with fc2:
+            st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Criativo (Sub_id3)</div>',unsafe_allow_html=True)
+            criativos_sel = st.multiselect("",criativos_disp,default=[],placeholder="Todos",label_visibility="collapsed",key="rs_criativo")
+        with fc3:
+            st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Status do Pedido</div>',unsafe_allow_html=True)
+            status_sel = st.multiselect("",status_disp,default=[],placeholder="Todos",label_visibility="collapsed",key="rs_status")
+
+    dh = df_h.copy(); dc = df_c.copy()
+    if canais_sel: dh=dh[dh["Sub_id2"].isin(canais_sel)]; dc=dc[dc["Sub_id2"].isin(canais_sel)]
+    if criativos_sel: dh=dh[dh["Sub_id3"].isin(criativos_sel)]; dc=dc[dc["Sub_id3"].isin(criativos_sel)]
+    if status_sel: dh=dh[dh["Status"].isin(status_sel)]; dc=dc[dc["Status"].isin(status_sel)]
+
+    if dh.empty and dc.empty:
+        st.warning("Sem dados para os filtros seleccionados."); return
+
+    # ── MÉTRICA DINÂMICA ──
+    st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin:16px 0 8px;">🎛️ Métrica principal (afecta todos os gráficos)</div>',unsafe_allow_html=True)
+    metrica_label = st.radio("",["Vendas","Comissão (R$)","Ticket Médio (R$)"],horizontal=True,key="rs_metrica",label_visibility="collapsed")
+
+    # ── KPIs RESUMO ──
+    sec("💰 Resumo do Período")
+    total_pedidos  = dh["ID_Pedido"].nunique() if not dh.empty else 0
+    total_comissao = dc["Comissao_item"].sum() if not dc.empty else 0
+    ticket_medio   = dc.groupby("ID_Pedido")["Comissao_item"].sum().mean() if not dc.empty else 0
+    lat_media      = dh["Latencia_h"].mean() if not dh.empty else 0
+    pct_urgente    = (dh["Latencia_h"]<1).sum()/max(len(dh),1)*100 if not dh.empty else 0
+    top_canal      = dh["Sub_id2"].value_counts().idxmax() if not dh.empty and dh["Sub_id2"].any() else "—"
+    k1,k2,k3,k4,k5,k6 = st.columns(6)
+    k1.markdown(card_kpi("Pedidos",f"{total_pedidos:,}"),unsafe_allow_html=True)
+    k2.markdown(card_kpi("Comissão Total",fmt_brl(total_comissao)),unsafe_allow_html=True)
+    k3.markdown(card_kpi("Ticket Médio",fmt_brl(ticket_medio)),unsafe_allow_html=True)
+    k4.markdown(card_kpi("Latência Média",f"{lat_media:.1f}h"),unsafe_allow_html=True)
+    k5.markdown(card_kpi("Compras Urgentes",f"{pct_urgente:.0f}%","em menos de 1h"),unsafe_allow_html=True)
+    k6.markdown(card_kpi("Canal Top",top_canal),unsafe_allow_html=True)
+
+    # ══ SEÇÃO 1 — MELHOR DIA & HORA ══
+    sec("📅 Melhor Dia & Hora")
+    if not dh.empty and "DiaSemana" in dh.columns:
+        if metrica_label=="Vendas":
+            pivot_data=dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor"); fmt_hover="%{z:.0f} vendas"
+        elif metrica_label=="Comissão (R$)":
+            tmp=dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(),on="ID_Pedido",how="left")
+            pivot_data=tmp.groupby(["DiaSemana","HoraDia"])["Comissao_item"].sum().reset_index(name="Valor"); fmt_hover="R$ %{z:.2f}"
+        else:
+            tmp=dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(),on="ID_Pedido",how="left")
+            pivot_data=tmp.groupby(["DiaSemana","HoraDia"])["Comissao_item"].mean().reset_index(name="Valor"); fmt_hover="R$ %{z:.2f}"
+        pivot_data["DiaSemana"]=pd.Categorical(pivot_data["DiaSemana"],categories=ORDEM_DIAS,ordered=True)
+        pivot_data=pivot_data.dropna(subset=["DiaSemana","HoraDia"]).sort_values(["DiaSemana","HoraDia"])
+        heatmap_pivot=pivot_data.pivot_table(index="DiaSemana",columns="HoraDia",values="Valor",fill_value=0)
+        heatmap_pivot=heatmap_pivot.reindex([d for d in ORDEM_DIAS if d in heatmap_pivot.index])
+        fig_heat=go.Figure(go.Heatmap(z=heatmap_pivot.values,x=[f"{int(h):02d}h" for h in heatmap_pivot.columns],y=heatmap_pivot.index.tolist(),
+            colorscale=[[0,"#1a1210"],[0.5,"#9c5834"],[1,"#bd6d34"]],
+            hovertemplate=f"Dia: %{{y}}<br>Hora: %{{x}}<br>{metrica_label}: {fmt_hover}<extra></extra>"))
+        fig_heat.update_layout(title=f"Heatmap — {metrica_label} por Dia × Hora",height=320,margin=dict(t=40,b=0,l=0,r=0),
+            plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+            xaxis=dict(color="#c5936d",tickfont=dict(size=10)),yaxis=dict(color="#c5936d",tickfont=dict(size=11)))
+        st.plotly_chart(fig_heat,use_container_width=True)
+        if not pivot_data.empty:
+            idx_max=pivot_data["Valor"].idxmax(); melhor_dia=pivot_data.loc[idx_max,"DiaSemana"]; melhor_h=int(pivot_data.loc[idx_max,"HoraDia"]); melhor_val=pivot_data.loc[idx_max,"Valor"]
+            val_fmt=f"{melhor_val:.0f}" if metrica_label=="Vendas" else fmt_brl(melhor_val)
+            best_dia_total=pivot_data.groupby("DiaSemana")["Valor"].sum().reindex(ORDEM_DIAS).dropna()
+            melhor_dia_geral=best_dia_total.idxmax() if not best_dia_total.empty else "—"
+            best_hora_total=pivot_data.groupby("HoraDia")["Valor"].sum()
+            melhor_hora_geral=int(best_hora_total.idxmax()) if not best_hora_total.empty else 0
+            c1,c2,c3=st.columns(3)
+            c1.markdown(card_kpi("🏆 Melhor Momento",f"{melhor_dia} às {melhor_h:02d}h",f"{metrica_label}: {val_fmt}"),unsafe_allow_html=True)
+            c2.markdown(card_kpi("📅 Melhor Dia (geral)",melhor_dia_geral),unsafe_allow_html=True)
+            c3.markdown(card_kpi("🕐 Melhor Hora (geral)",f"{melhor_hora_geral:02d}h"),unsafe_allow_html=True)
+            st.markdown("<div style='height:16px;'></div>",unsafe_allow_html=True)
+            h1,h2=st.columns(2)
+            with h1:
+                dia_totais=pivot_data.groupby("DiaSemana")["Valor"].sum().reindex(ORDEM_DIAS).dropna().reset_index(); dia_totais.columns=["Dia","Valor"]
+                cor_bar=[COR_PRINCIPAL if d==melhor_dia_geral else "#3a2c28" for d in dia_totais["Dia"]]
+                fig_dia=go.Figure(go.Bar(x=dia_totais["Dia"],y=dia_totais["Valor"],marker_color=cor_bar,text=dia_totais["Valor"].apply(lambda v:f"{v:.0f}" if metrica_label=="Vendas" else fmt_brl(v)),textposition="outside",textfont=dict(size=10,color="#c5936d")))
+                fig_dia.update_layout(title="Por Dia da Semana",height=280,margin=dict(t=36,b=0,l=0,r=0),showlegend=False,**THEME)
+                st.plotly_chart(fig_dia,use_container_width=True)
+            with h2:
+                hora_totais=pivot_data.groupby("HoraDia")["Valor"].sum().reset_index(); hora_totais.columns=["Hora","Valor"]; hora_totais=hora_totais.sort_values("Hora")
+                cor_h=[COR_PRINCIPAL if int(h)==melhor_hora_geral else "#3a2c28" for h in hora_totais["Hora"]]
+                fig_hora=go.Figure(go.Bar(x=[f"{int(h):02d}h" for h in hora_totais["Hora"]],y=hora_totais["Valor"],marker_color=cor_h))
+                fig_hora.update_layout(title="Por Hora do Dia",height=280,margin=dict(t=36,b=0,l=0,r=0),showlegend=False,**THEME)
+                st.plotly_chart(fig_hora,use_container_width=True)
+
+    # ══ SEÇÃO 2 — CANAL EM PROFUNDIDADE ══
+    sec("📡 Canal (Sub_id2) em Profundidade")
+    if not dh.empty and dh["Sub_id2"].any():
+        if metrica_label=="Vendas":
+            canal_perf=dh.groupby("Sub_id2")["ID_Pedido"].nunique().reset_index(name="Valor")
+        elif metrica_label=="Comissão (R$)":
+            tmp=dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(),on="ID_Pedido",how="left")
+            canal_perf=tmp.groupby("Sub_id2")["Comissao_item"].sum().reset_index(name="Valor")
+        else:
+            tmp=dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(),on="ID_Pedido",how="left")
+            canal_perf=tmp.groupby("Sub_id2")["Comissao_item"].mean().reset_index(name="Valor")
+        canal_perf=canal_perf[canal_perf["Sub_id2"]!=""].sort_values("Valor",ascending=True)
+        campeao_canal=canal_perf["Sub_id2"].iloc[-1] if not canal_perf.empty else ""
+        cor_canal=[COR_PRINCIPAL if c==campeao_canal else "#3a2c28" for c in canal_perf["Sub_id2"]]
+        fig_canal=go.Figure(go.Bar(x=canal_perf["Valor"],y=canal_perf["Sub_id2"],orientation="h",marker_color=cor_canal,
+            text=canal_perf["Valor"].apply(lambda v:f"{v:.0f}" if metrica_label=="Vendas" else fmt_brl(v)),textposition="outside",textfont=dict(color="#c5936d",size=11)))
+        fig_canal.update_layout(title=f"{metrica_label} por Canal",height=max(220,len(canal_perf)*44),margin=dict(t=36,b=0,l=0,r=60),showlegend=False,**THEME)
+        st.plotly_chart(fig_canal,use_container_width=True)
+
+        # Latência por canal
+        st.markdown('<div style="color:#c5936d;font-size:13px;font-weight:600;margin:20px 0 10px;">⏱️ Latência clique → compra por Canal</div>',unsafe_allow_html=True)
+        lat_canal=dh[dh["Latencia_h"].notna()&(dh["Latencia_h"]>=0)].copy()
+        if not lat_canal.empty:
+            grp=lat_canal.groupby("Sub_id2")["Latencia_h"]; grp_tot=lat_canal.groupby("Sub_id2").size()
+            grp_urg=lat_canal[lat_canal["Latencia_h"]<1].groupby("Sub_id2").size()
+            grp_rap=lat_canal[lat_canal["Latencia_h"]<6].groupby("Sub_id2").size()
+            lat_grp=grp.agg(Media="mean",Mediana="median").reset_index()
+            lat_grp["Urgente_pct"]=(grp_urg/grp_tot*100).reindex(lat_grp["Sub_id2"]).values
+            lat_grp["Rapido_pct"]=(grp_rap/grp_tot*100).reindex(lat_grp["Sub_id2"]).values
+            lat_grp=lat_grp.fillna(0).round(1); lat_grp=lat_grp[lat_grp["Sub_id2"]!=""].sort_values("Media")
+            la1,la2=st.columns(2)
+            with la1:
+                fig_lat=go.Figure()
+                fig_lat.add_trace(go.Bar(name="Média (h)",x=lat_grp["Sub_id2"],y=lat_grp["Media"],marker_color=COR_PRINCIPAL))
+                fig_lat.add_trace(go.Bar(name="Mediana (h)",x=lat_grp["Sub_id2"],y=lat_grp["Mediana"],marker_color="#9c5834"))
+                fig_lat.update_layout(title="Latência Média e Mediana (h)",barmode="group",height=280,margin=dict(t=36,b=0,l=0,r=0),**THEME,legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
+                st.plotly_chart(fig_lat,use_container_width=True)
+            with la2:
+                fig_urg=go.Figure()
+                fig_urg.add_trace(go.Bar(name="% Urgente (<1h)",x=lat_grp["Sub_id2"],y=lat_grp["Urgente_pct"],marker_color="#7a9e4e"))
+                fig_urg.add_trace(go.Bar(name="% Rápido (<6h)",x=lat_grp["Sub_id2"],y=lat_grp["Rapido_pct"],marker_color="#2980b9"))
+                fig_urg.update_layout(title="% Compras Urgentes por Canal",barmode="group",height=280,margin=dict(t=36,b=0,l=0,r=0),**THEME,legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
+                st.plotly_chart(fig_urg,use_container_width=True)
+
+            st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:16px 0 8px;">Distribuição de Latência por Canal (histograma)</div>',unsafe_allow_html=True)
+            canais_lat=[c for c in lat_canal["Sub_id2"].unique() if c]
+            canal_hist=st.selectbox("Canal",canais_lat,key="rs_hist_canal")
+            df_hist=lat_canal[lat_canal["Sub_id2"]==canal_hist]["Latencia_h"].clip(upper=72)
+            fig_hist=go.Figure(go.Histogram(x=df_hist,nbinsx=30,marker_color=COR_PRINCIPAL,opacity=0.85,hovertemplate="Latência: %{x:.1f}h<br>Pedidos: %{y}<extra></extra>"))
+            fig_hist.add_vline(x=df_hist.mean(),line_dash="dash",line_color="#7a9e4e",annotation_text=f"Média: {df_hist.mean():.1f}h",annotation_font_color="#7a9e4e")
+            fig_hist.add_vline(x=df_hist.median(),line_dash="dot",line_color="#c5936d",annotation_text=f"Mediana: {df_hist.median():.1f}h",annotation_font_color="#c5936d")
+            fig_hist.update_layout(title=f"Distribuição de Latência — {canal_hist} (cap. 72h)",height=280,margin=dict(t=36,b=0,l=0,r=0),**THEME,xaxis_title="Latência (h)",yaxis_title="Nº Pedidos")
+            st.plotly_chart(fig_hist,use_container_width=True)
+
+        # Vendas por canal × dia
+        st.markdown('<div style="color:#c5936d;font-size:13px;font-weight:600;margin:20px 0 10px;">📈 Vendas por Canal × Dia da Semana</div>',unsafe_allow_html=True)
+        canal_dia=dh[dh["Sub_id2"]!=""].groupby(["Sub_id2","DiaSemana"])["ID_Pedido"].nunique().reset_index(name="Vendas")
+        canal_dia["DiaSemana"]=pd.Categorical(canal_dia["DiaSemana"],categories=ORDEM_DIAS,ordered=True)
+        canal_dia=canal_dia.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
+        fig_cd=go.Figure()
+        for i,canal in enumerate([c for c in canal_dia["Sub_id2"].unique() if c]):
+            df_c2=canal_dia[canal_dia["Sub_id2"]==canal]
+            fig_cd.add_trace(go.Scatter(x=df_c2["DiaSemana"],y=df_c2["Vendas"],mode="lines+markers",name=canal,line=dict(color=CORES[i%len(CORES)],width=2),marker=dict(size=7)))
+        fig_cd.update_layout(title="Vendas por Canal × Dia da Semana",height=300,margin=dict(t=36,b=0,l=0,r=0),**THEME,legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
+        st.plotly_chart(fig_cd,use_container_width=True)
+
+    # ══ SEÇÃO 3 — CATEGORIA APROFUNDADA ══
+    sec("🏷️ Categoria Aprofundada")
+    if not dc.empty and "Cat_L1" in dc.columns:
+        nivel_cat=st.radio("Nível de categoria",["L1","L1 + L2"],horizontal=True,key="rs_cat_nivel")
+        col_cat="Cat_L1" if nivel_cat=="L1" else ["Cat_L1","Cat_L2"]
+        if metrica_label=="Vendas":
+            cat_perf=dc.groupby(col_cat)["ID_Pedido"].nunique().reset_index(name="Valor")
+        elif metrica_label=="Comissão (R$)":
+            cat_perf=dc.groupby(col_cat)["Comissao_item"].sum().reset_index(name="Valor")
+        else:
+            cat_perf=dc.groupby(col_cat).apply(lambda x:x.groupby("ID_Pedido")["Comissao_item"].sum().mean()).reset_index(name="Valor")
+        if isinstance(col_cat,list): cat_perf["Label"]=cat_perf["Cat_L1"]+" › "+cat_perf["Cat_L2"]
+        else: cat_perf["Label"]=cat_perf[col_cat]
+        cat_perf=cat_perf[cat_perf["Label"].str.strip()!=""].sort_values("Valor",ascending=True).tail(15)
+        cor_cat=[COR_PRINCIPAL if i==len(cat_perf)-1 else "#3a2c28" for i in range(len(cat_perf))]
+        fig_cat=go.Figure(go.Bar(x=cat_perf["Valor"],y=cat_perf["Label"],orientation="h",marker_color=cor_cat,
+            text=cat_perf["Valor"].apply(lambda v:f"{v:.0f}" if metrica_label=="Vendas" else fmt_brl(v)),textposition="outside",textfont=dict(color="#c5936d",size=10)))
+        fig_cat.update_layout(title=f"{metrica_label} por Categoria ({nivel_cat})",height=max(280,len(cat_perf)*36),margin=dict(t=36,b=0,l=0,r=80),showlegend=False,**THEME)
+        st.plotly_chart(fig_cat,use_container_width=True)
+
+        # Sazonalidade
+        st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:20px 0 8px;">📅 Sazonalidade — Melhor Dia por Categoria</div>',unsafe_allow_html=True)
+        if not dh.empty:
+            dc_dia=dc.merge(dh[["ID_Pedido","DiaSemana"]].drop_duplicates(),on="ID_Pedido",how="left")
+            dc_dia=dc_dia[dc_dia["DiaSemana"].notna()&(dc_dia["DiaSemana"]!="")]
+            sazon=dc_dia.groupby(["Cat_L1","DiaSemana"])["Comissao_item"].sum().reset_index()
+            sazon["DiaSemana"]=pd.Categorical(sazon["DiaSemana"],categories=ORDEM_DIAS,ordered=True)
+            sazon=sazon.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
+            cats_sazon=[c for c in sazon["Cat_L1"].unique() if c][:8]
+            if cats_sazon:
+                cat_sel_sazon=st.selectbox("Categoria para sazonalidade",cats_sazon,key="rs_sazon_cat")
+                df_s=sazon[sazon["Cat_L1"]==cat_sel_sazon]
+                melhor_d=df_s.loc[df_s["Comissao_item"].idxmax(),"DiaSemana"] if not df_s.empty else "—"
+                cor_s=[COR_PRINCIPAL if d==melhor_d else "#3a2c28" for d in df_s["DiaSemana"]]
+                fig_sazon=go.Figure(go.Bar(x=df_s["DiaSemana"],y=df_s["Comissao_item"],marker_color=cor_s,
+                    text=df_s["Comissao_item"].apply(fmt_brl),textposition="outside",textfont=dict(color="#c5936d",size=10)))
+                fig_sazon.update_layout(title=f"Comissão por Dia — {cat_sel_sazon}",height=260,margin=dict(t=36,b=0,l=0,r=0),showlegend=False,**THEME)
+                st.plotly_chart(fig_sazon,use_container_width=True)
+
+    # ══ SEÇÃO 4 — ALERTAS INTELIGENTES ══
+    sec("🚨 Alertas Inteligentes")
+    al1,al2=st.columns(2)
+    with al1:
+        st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">🎯 Concentração de Comissão por Criativo (80/20)</div>',unsafe_allow_html=True)
+        if not dc.empty and "Sub_id3" in dc.columns:
+            cri_com=dc[dc["Sub_id3"]!=""].groupby("Sub_id3")["Comissao_item"].sum().sort_values(ascending=False).reset_index()
+            cri_com["Acumulado_pct"]=cri_com["Comissao_item"].cumsum()/cri_com["Comissao_item"].sum()*100
+            n_80=(cri_com["Acumulado_pct"]<=80).sum()+1; total_cri=len(cri_com)
+            fig_80=go.Figure()
+            fig_80.add_trace(go.Bar(x=cri_com["Sub_id3"].head(20),y=cri_com["Comissao_item"].head(20),marker_color=[COR_PRINCIPAL if i<n_80 else "#3a2c28" for i in range(min(20,len(cri_com)))],name="Comissão"))
+            fig_80.add_trace(go.Scatter(x=cri_com["Sub_id3"].head(20),y=cri_com["Acumulado_pct"].head(20),mode="lines",name="% Acumulado",yaxis="y2",line=dict(color="#7a9e4e",width=2)))
+            fig_80.update_layout(title=f"{n_80} de {total_cri} criativos = 80% da comissão",height=300,margin=dict(t=40,b=60,l=0,r=0),
+                yaxis2=dict(overlaying="y",side="right",color="#7a9e4e",ticksuffix="%"),
+                xaxis=dict(tickangle=-40,color="#c5936d",gridcolor="#2a1f1a"),yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),
+                plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
+                legend=dict(font=dict(color="#f6e8d8",size=10),bgcolor="rgba(30,18,16,0.8)"))
+            st.plotly_chart(fig_80,use_container_width=True)
+    with al2:
+        st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">💀 Taxa de Pendência/Cancelamento por Criativo</div>',unsafe_allow_html=True)
+        if not dc.empty and "Status" in dc.columns and "Sub_id3" in dc.columns:
+            dc_status=dc[dc["Sub_id3"]!=""].copy()
+            tot_cri=dc_status.groupby("Sub_id3")["ID_Pedido"].nunique()
+            pend_cri=dc_status[dc_status["Status"].str.lower().isin(["pendente","cancelado"])].groupby("Sub_id3")["ID_Pedido"].nunique()
+            pend_pct=(pend_cri/tot_cri*100).fillna(0).sort_values(ascending=False).head(12).reset_index()
+            pend_pct.columns=["Criativo","% Pendente/Cancelado"]
+            cor_pend=["#c0392b" if v>60 else (COR_PRINCIPAL if v>30 else "#3a2c28") for v in pend_pct["% Pendente/Cancelado"]]
+            fig_pend=go.Figure(go.Bar(x=pend_pct["Criativo"],y=pend_pct["% Pendente/Cancelado"],marker_color=cor_pend,
+                text=pend_pct["% Pendente/Cancelado"].apply(lambda v:f"{v:.0f}%"),textposition="outside",textfont=dict(color="#c5936d",size=10)))
+            fig_pend.add_hline(y=50,line_dash="dash",line_color="#c0392b",annotation_text="Alerta 50%",annotation_font_color="#c0392b")
+            fig_pend.update_layout(title="% Pedidos Pendentes/Cancelados",height=300,margin=dict(t=36,b=60,l=0,r=0),
+                xaxis=dict(tickangle=-40,color="#c5936d",gridcolor="#2a1f1a"),yaxis=dict(color="#c5936d",gridcolor="#2a1f1a",ticksuffix="%"),
+                plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",showlegend=False)
+            st.plotly_chart(fig_pend,use_container_width=True)
+
+    # ══ SEÇÃO 5 — TOP PRODUTOS ══
+    sec("🏆 Top Produtos")
+    if not dc.empty and "Produto" in dc.columns:
+        top_prod=dc[dc["Produto"]!=""].groupby(["Produto","Cat_L1"]).agg(
+            Pedidos=("ID_Pedido","nunique"),Qtd=("Qtd","sum"),
+            Comissao_total=("Comissao_item","sum"),Preco_medio=("Preco","mean")
+        ).reset_index().sort_values("Comissao_total",ascending=False).head(10).reset_index(drop=True)
+        top_prod.index=top_prod.index+1
+        top_prod["Comissao_total"]=top_prod["Comissao_total"].apply(fmt_brl)
+        top_prod["Preco_medio"]=top_prod["Preco_medio"].apply(fmt_brl)
+        top_prod.columns=["Produto","Categoria","Pedidos","Qtd","Comissão Total","Preço Médio"]
+        st.dataframe(top_prod,use_container_width=True,hide_index=False)
+
+    st.markdown("<div style='height:24px;'></div>",unsafe_allow_html=True)
+    if st.button("🔄 Actualizar Radar",use_container_width=False,key="rs_refresh"):
+        st.cache_data.clear(); st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════════════
 def main():
     if not check_login(): return
 
@@ -549,30 +696,38 @@ def main():
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">NAVEGAÇÃO</div>',unsafe_allow_html=True)
         col_nav1,col_nav2=st.columns(2)
         with col_nav1:
-            if st.button("📊 Dashboard",use_container_width=True,
-                type="primary" if st.session_state.pagina=="dashboard" else "secondary"):
+            if st.button("📊 Dashboard",use_container_width=True,type="primary" if st.session_state.pagina=="dashboard" else "secondary"):
                 st.session_state.pagina="dashboard"; st.rerun()
         with col_nav2:
-            if st.button("👥 Públicos",use_container_width=True,
-                type="primary" if st.session_state.pagina=="publicos" else "secondary"):
+            if st.button("👥 Públicos",use_container_width=True,type="primary" if st.session_state.pagina=="publicos" else "secondary"):
                 st.session_state.pagina="publicos"; st.rerun()
+        # ── NOVO BOTÃO RADAR ──
+        if st.button("📡 Radar Shopee",use_container_width=True,type="primary" if st.session_state.pagina=="radar" else "secondary"):
+            st.session_state.pagina="radar"; st.rerun()
         st.markdown("---")
         if st.session_state.pagina=="dashboard":
             st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">ATALHOS</div>',unsafe_allow_html=True)
-        st.markdown("""
-        <a href="#kpis" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">💰 KPIs Gerais</a>
-        <a href="#pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📣 Campanha Pago</a>
-        <a href="#awareness" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📡 Awareness</a>
-        <a href="#evolucao" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📈 Evolucao</a>
-        <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🏆 Campeoes</a>
-        <a href="#ipa" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🎯 IPA</a>
-        <a href="#cruzamento" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔀 Cruzamento</a>
-        <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;text-align:center;">🤖 Insights IA</a>
-        """,unsafe_allow_html=True)
+            st.markdown("""
+            <a href="#kpis" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">💰 KPIs Gerais</a>
+            <a href="#pago" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📣 Campanha Pago</a>
+            <a href="#awareness" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📡 Awareness</a>
+            <a href="#evolucao" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">📈 Evolucao</a>
+            <a href="#campeoes" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🏆 Campeoes</a>
+            <a href="#ipa" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🎯 IPA</a>
+            <a href="#cruzamento" style="display:block;color:#c5936d;font-size:12px;text-decoration:none;background:#1a1210;padding:6px 12px;border-radius:8px;border:1px solid #3a2c28;margin-bottom:4px;text-align:center;">🔀 Cruzamento</a>
+            <a href="#insights-ia" style="display:block;color:#bd6d34;font-size:12px;text-decoration:none;background:#2a1f1a;padding:6px 12px;border-radius:8px;border:1px solid #bd6d34;text-align:center;">🤖 Insights IA</a>
+            """,unsafe_allow_html=True)
         st.markdown("---")
         st.markdown('<div style="color:#c5936d;font-size:11px;">👤 {}</div>'.format(st.session_state.get("usuario","")),unsafe_allow_html=True)
         if st.button("🔄 Actualizar dados",use_container_width=True): st.cache_data.clear(); st.rerun()
         if st.button("🚪 Sair",use_container_width=True): st.session_state.logged_in=False; st.rerun()
+
+    # ── ROTEADOR ──
+    pagina_actual = st.session_state.get("pagina","dashboard")
+
+    if pagina_actual == "radar":
+        render_radar_shopee()
+        return
 
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📊 Dashboard de Performance</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
 
@@ -582,17 +737,13 @@ def main():
     if df_raw.empty:
         st.error("Sem dados na planilha Resultados Shopee."); return
 
-    pagina_actual = st.session_state.get("pagina","dashboard")
-
     if pagina_actual == "publicos":
         render_publicos(df_raw, df_pago_raw)
         return
 
     # ── FILTROS ──
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
-    hoje=date.today()
-    ontem=hoje-timedelta(days=1)
-    ref=ontem
+    hoje=date.today(); ontem=hoje-timedelta(days=1); ref=ontem
     if "preset" not in st.session_state: st.session_state.preset="all"
     p=st.session_state.get("preset","all")
     if   p=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
@@ -601,11 +752,9 @@ def main():
     elif p=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
     else:          d_ini_def=data_min
     d_fim_def=ontem
-
     sid2_opts=sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
     sid1_opts=sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
     sid3_opts=sorted([x for x in df_raw["Sub_id3"].unique() if x.strip()])
-
     with st.expander("🎛️ Filtros",expanded=False):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>',unsafe_allow_html=True)
         b1,b2,b3,b4,b5=st.columns(5)
@@ -630,130 +779,59 @@ def main():
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>',unsafe_allow_html=True)
         sid3_sel=st.multiselect("",sid3_opts,default=[],placeholder="Todos",label_visibility="collapsed",key="ms3")
-
     if not sid2_sel: sid2_sel=sid2_opts
     if not sid1_sel: sid1_sel=sid1_opts
     if not sid3_sel: sid3_sel=sid3_opts
-
     mask=((df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim))
     if sid2_sel!=sid2_opts: mask=mask&df_raw["Sub_id2"].isin(sid2_sel)
     if sid1_sel!=sid1_opts: mask=mask&df_raw["Sub_id1"].isin(sid1_sel)
     if sid3_sel!=sid3_opts: mask=mask&df_raw["Sub_id3"].isin(sid3_sel)
     df=df_raw[mask].copy()
-
-    # ══════════════════════════════════════════════════════════════════════
-    # BUG 2 FIX — Investimento errado ao filtrar Sub_id1 e Sub_id3
-    # PROBLEMA ORIGINAL: df_pago_periodo só filtrava Sub_id1, ignorava Sub_id3.
-    # FIX: aplicar Sub_id3 também no filtro do df_pago_raw, usando os
-    #      Sub_id1s correspondentes às linhas que passaram no filtro Sub_id3
-    #      do df_raw — assim o cruzamento é consistente.
-    # ══════════════════════════════════════════════════════════════════════
     if not df_pago_raw.empty:
         _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
         mp=(df_pago_raw["Data"].dt.date>=_di)&(df_pago_raw["Data"].dt.date<=_df)
-
-        # Se Sub_id1 filtrado → aplicar directamente no pago_raw
-        if sid1_sel!=sid1_opts:
-            mp=mp&df_pago_raw["Sub_id1"].isin(sid1_sel)
-
-        # Se Sub_id3 filtrado → descobrir quais Sub_id1s correspondem
-        # a essas combinações no df_raw e filtrar pago_raw por esses Sub_id1s
+        if sid1_sel!=sid1_opts: mp=mp&df_pago_raw["Sub_id1"].isin(sid1_sel)
         if sid3_sel!=sid3_opts:
-            sid1s_do_sid3 = (
-                df_raw[
-                    (df_raw["Data"].dt.date>=_di) &
-                    (df_raw["Data"].dt.date<=_df) &
-                    (df_raw["Sub_id3"].isin(sid3_sel))
-                ]["Sub_id1"].unique().tolist()
-            )
+            sid1s_do_sid3=(df_raw[(df_raw["Data"].dt.date>=_di)&(df_raw["Data"].dt.date<=_df)&(df_raw["Sub_id3"].isin(sid3_sel))]["Sub_id1"].unique().tolist())
             mp=mp&df_pago_raw["Sub_id1"].isin(sid1s_do_sid3)
-
         df_pago_periodo=df_pago_raw[mp].copy()
     else:
         df_pago_periodo=pd.DataFrame()
-
-    # Filtrar awareness por periodo
     if not df_aw_raw.empty:
         _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
         ma=(df_aw_raw["Data"].dt.date>=_di)&(df_aw_raw["Data"].dt.date<=_df)
         df_aw=df_aw_raw[ma].copy()
     else:
         df_aw=pd.DataFrame()
-
     if df.empty:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:24px;text-align:center;"><div style="font-size:32px;">📭</div><div style="color:#f6e8d8;font-size:16px;">Sem dados para o periodo seleccionado</div><div style="color:#c5936d;font-size:13px;">Dados disponiveis ate {}.</div></div>'.format(data_max),unsafe_allow_html=True)
         st.stop()
-
-    # ── AVISO DE GAPS ──
     import datetime as _dt
-    _todas_datas = set(df_raw[(df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim)]["Data"].dt.date.unique())
-    _n_dias = (d_fim - d_ini).days + 1
-    _datas_esperadas = {d_ini + _dt.timedelta(days=i) for i in range(_n_dias)}
-    _gaps = sorted(_datas_esperadas - _todas_datas)
-    _hoje = _dt.date.today()
-    _gaps = [d for d in _gaps if d < _hoje and d <= ontem]
+    _todas_datas=set(df_raw[(df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim)]["Data"].dt.date.unique())
+    _n_dias=(d_fim-d_ini).days+1
+    _datas_esperadas={d_ini+_dt.timedelta(days=i) for i in range(_n_dias)}
+    _gaps=sorted(_datas_esperadas-_todas_datas)
+    _hoje=_dt.date.today()
+    _gaps=[d for d in _gaps if d<_hoje and d<=ontem]
     if _gaps:
-        if len(_gaps) == 1:
-            _gaps_txt = _gaps[0].strftime("%d/%m")
-        elif len(_gaps) <= 3:
-            _gaps_txt = ", ".join(d.strftime("%d/%m") for d in _gaps)
-        else:
-            _gaps_txt = ", ".join(d.strftime("%d/%m") for d in _gaps[:3]) + f" (+{len(_gaps)-3})"
-        st.markdown(
-            f'''<div style="background:#1a1210;border:1px solid #d4a017;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-            <span style="font-size:14px;">⚠️</span>
-            <span style="color:#d4a017;font-size:12px;font-weight:600;">Sem dados em: <span style="font-weight:400;">{_gaps_txt}</span> — o script pode não ter corrido nesses dias.</span>
-            </div>''',
-            unsafe_allow_html=True
-        )
-
-    # ── CALCULAR METRICAS ──
+        _gaps_txt=_gaps[0].strftime("%d/%m") if len(_gaps)==1 else (", ".join(d.strftime("%d/%m") for d in _gaps) if len(_gaps)<=3 else ", ".join(d.strftime("%d/%m") for d in _gaps[:3])+f" (+{len(_gaps)-3})")
+        st.markdown(f'''<div style="background:#1a1210;border:1px solid #d4a017;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;"><span style="font-size:14px;">⚠️</span><span style="color:#d4a017;font-size:12px;font-weight:600;">Sem dados em: <span style="font-weight:400;">{_gaps_txt}</span> — o script pode não ter corrido nesses dias.</span></div>''',unsafe_allow_html=True)
     invest_pago=df_pago_periodo["Investimento"].sum() if not df_pago_periodo.empty else 0.0
     invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
     invest_total=invest_pago+invest_aw
-
-    _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
-    _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
-    if not df_pago_raw.empty:
-        _pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]
-        invest_pago_ant=_pago_ant["Investimento"].sum()
-    else:
-        invest_pago_ant=0.0
-    if not df_aw_raw.empty:
-        _aw_ant=df_aw_raw[(df_aw_raw["Data"].dt.date>=_ant_ini)&(df_aw_raw["Data"].dt.date<=_ant_fim)]
-        invest_aw_ant=_aw_ant["Investimento_aw"].sum()
-    else:
-        invest_aw_ant=0.0
+    _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1); _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
+    invest_pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]["Investimento"].sum() if not df_pago_raw.empty else 0.0
+    invest_aw_ant=df_aw_raw[(df_aw_raw["Data"].dt.date>=_ant_ini)&(df_aw_raw["Data"].dt.date<=_ant_fim)]["Investimento_aw"].sum() if not df_aw_raw.empty else 0.0
     invest_total_ant=invest_pago_ant+invest_aw_ant
-
-    m=calcular(df)
-    m["invest"]=invest_pago
-    m["invest_total"]=invest_total
-    m["lucro"]=m["comissao"]-invest_total
-    m["roi"]=(m["comissao"]-invest_total)/invest_total if invest_total>0 else 0
+    m=calcular(df); m["invest"]=invest_pago; m["invest_total"]=invest_total; m["lucro"]=m["comissao"]-invest_total; m["roi"]=(m["comissao"]-invest_total)/invest_total if invest_total>0 else 0
     if not df_pago_periodo.empty:
-        m["impressoes"]=df_pago_periodo["Impressoes"].sum()
-        m["alcance"]=df_pago_periodo["Alcance"].sum()
-        m["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
-
-    df_ant=semana_anterior(df_raw,d_ini,d_fim)
-    m_ant=calcular(df_ant) if not df_ant.empty else None
-    mv=m_ant if m_ant else {}
-
-    df_pago_v =df[df["Sub_id2"]=="pago"]
-    df_org    =df[df["Sub_id2"]=="organico"]
-    df_story  =df[df["Sub_id2"]=="story"]
-    m_pago =calcular(df_pago_v)  if len(df_pago_v)>0  else None
-    m_org  =calcular(df_org)     if len(df_org)>0     else None
-    m_story=calcular(df_story)   if len(df_story)>0   else None
-
+        m["impressoes"]=df_pago_periodo["Impressoes"].sum(); m["alcance"]=df_pago_periodo["Alcance"].sum(); m["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
+    df_ant=semana_anterior(df_raw,d_ini,d_fim); m_ant=calcular(df_ant) if not df_ant.empty else None; mv=m_ant if m_ant else {}
+    df_pago_v=df[df["Sub_id2"]=="pago"]; df_org=df[df["Sub_id2"]=="organico"]; df_story=df[df["Sub_id2"]=="story"]
+    m_pago=calcular(df_pago_v) if len(df_pago_v)>0 else None; m_org=calcular(df_org) if len(df_org)>0 else None; m_story=calcular(df_story) if len(df_story)>0 else None
     if m_pago and not df_pago_periodo.empty:
-        m_pago["invest"]=invest_pago
-        m_pago["lucro"]=m_pago["comissao"]-invest_pago
-        m_pago["roi"]=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
-        m_pago["impressoes"]=df_pago_periodo["Impressoes"].sum()
-        m_pago["alcance"]=df_pago_periodo["Alcance"].sum()
-        m_pago["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
+        m_pago["invest"]=invest_pago; m_pago["lucro"]=m_pago["comissao"]-invest_pago; m_pago["roi"]=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
+        m_pago["impressoes"]=df_pago_periodo["Impressoes"].sum(); m_pago["alcance"]=df_pago_periodo["Alcance"].sum(); m_pago["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
         m_pago["cpm_imp"]=(invest_pago/m_pago["impressoes"]*1000) if m_pago["impressoes"]>0 else 0
         m_pago["cpm_alc"]=(invest_pago/m_pago["alcance"]*1000) if m_pago["alcance"]>0 else 0
         m_pago["cpc"]=invest_pago/m_pago["cliques_meta"] if m_pago["cliques_meta"]>0 else 0
@@ -761,45 +839,36 @@ def main():
         m_pago["ctr_meta"]=(m_pago["cliques_meta"]/m_pago["alcance"]*100) if m_pago["alcance"]>0 else 0
         m_pago["ctr_cv"]=(m_pago["vendas"]/m_pago["cliques_meta"]*100) if m_pago["cliques_meta"]>0 else 0
         m_pago["freq"]=m_pago["impressoes"]/m_pago["alcance"] if m_pago["alcance"]>0 else 0
-
-    df_ant_pago =df_ant[df_ant["Sub_id2"]=="pago"]     if not df_ant.empty else pd.DataFrame()
-    df_ant_org  =df_ant[df_ant["Sub_id2"]=="organico"] if not df_ant.empty else pd.DataFrame()
-    df_ant_story=df_ant[df_ant["Sub_id2"]=="story"]    if not df_ant.empty else pd.DataFrame()
-    m_ant_pago  =calcular(df_ant_pago)  if not df_ant_pago.empty  else None
-    m_ant_org   =calcular(df_ant_org)   if not df_ant_org.empty   else None
-    m_ant_story =calcular(df_ant_story) if not df_ant_story.empty else None
-
+    df_ant_pago=df_ant[df_ant["Sub_id2"]=="pago"] if not df_ant.empty else pd.DataFrame()
+    df_ant_org=df_ant[df_ant["Sub_id2"]=="organico"] if not df_ant.empty else pd.DataFrame()
+    df_ant_story=df_ant[df_ant["Sub_id2"]=="story"] if not df_ant.empty else pd.DataFrame()
+    m_ant_pago=calcular(df_ant_pago) if not df_ant_pago.empty else None
+    m_ant_org=calcular(df_ant_org) if not df_ant_org.empty else None
+    m_ant_story=calcular(df_ant_story) if not df_ant_story.empty else None
     df_daily=df.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")).reset_index().sort_values("Data")
     df_daily["Ticket_Medio"]=df_daily.apply(lambda r:r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0,axis=1)
     df_daily["CTR_calc"]=df_daily.apply(lambda r:r["Vendas"]/r["Cliques"]*100 if r["Cliques"]>0 else 0,axis=1)
     if not df_pago_periodo.empty:
         inv_d=df_pago_periodo.groupby("Data").agg(Invest_pago=("Investimento","sum")).reset_index()
-        df_daily=df_daily.merge(inv_d,on="Data",how="left")
-        df_daily["Invest_pago"]=df_daily["Invest_pago"].fillna(0)
-    else:
-        df_daily["Invest_pago"]=0.0
+        df_daily=df_daily.merge(inv_d,on="Data",how="left"); df_daily["Invest_pago"]=df_daily["Invest_pago"].fillna(0)
+    else: df_daily["Invest_pago"]=0.0
     if not df_aw.empty:
         inv_aw_d=df_aw.groupby("Data").agg(Invest_aw=("Investimento_aw","sum")).reset_index()
-        df_daily=df_daily.merge(inv_aw_d,on="Data",how="left")
-        df_daily["Invest_aw"]=df_daily["Invest_aw"].fillna(0)
-    else:
-        df_daily["Invest_aw"]=0.0
+        df_daily=df_daily.merge(inv_aw_d,on="Data",how="left"); df_daily["Invest_aw"]=df_daily["Invest_aw"].fillna(0)
+    else: df_daily["Invest_aw"]=0.0
     df_daily["Investimento"]=df_daily["Invest_pago"]+df_daily["Invest_aw"]
     df_daily["ROI_calc"]=df_daily.apply(lambda r:(r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0,axis=1)
 
-    # ── KPIs GERAIS ──
+    # O resto do dashboard original continua igual a partir daqui...
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    comissao_total_ant=mv.get("comissao",0)
-    lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
+    comissao_total_ant=mv.get("comissao",0); lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
     with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"))
     with r4:
-        roi_g=m["roi"]
-        cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
-        comissao_ant=mv.get("comissao",0)
-        roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
+        roi_g=m["roi"]; cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
+        comissao_ant=mv.get("comissao",0); roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
         card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"))
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
@@ -808,12 +877,6 @@ def main():
     with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"))
     with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"))
 
-    # ══════════════════════════════════════════════════════════════════════
-    # BUG 3 FIX — Performance por Canal sem delta em Cliques, CTR, Ticket
-    # PROBLEMA ORIGINAL: tr() só era chamado para Vendas e Comissão.
-    # FIX: adicionar tr() nos 3 campos em falta, com inverted=True no CTR
-    #      (queda no CTR é negativa) e inverted=False nos outros.
-    # ══════════════════════════════════════════════════════════════════════
     st.markdown('<div class="section-title">📂 Performance por Canal</div>',unsafe_allow_html=True)
     cc1,cc2,cc3=st.columns(3)
     def canal_card(col,mc,ma,nome,emoji):
@@ -822,101 +885,57 @@ def main():
                 def tr(cur,a,inv=False):
                     if not ma or a==0: return ""
                     pct=(cur-a)/abs(a)*100
-                    if inv:
-                        c="#c0392b" if pct>0 else "#7a9e4e"; ar="▲" if pct>0 else "▼"
-                    else:
-                        c="#7a9e4e" if pct>0 else "#c0392b"; ar="▲" if pct>0 else "▼"
+                    if inv: c="#c0392b" if pct>0 else "#7a9e4e"; ar="▲" if pct>0 else "▼"
+                    else: c="#7a9e4e" if pct>0 else "#c0392b"; ar="▲" if pct>0 else "▼"
                     return '<span style="color:{};font-size:10px;">{} {:.1f}%</span>'.format(c,ar,abs(pct))
                 a=ma if ma else {}
-                st.markdown("""<div class="canal-card"><div class="canal-title">{e} {n}</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                <div><div class="canal-metric">Vendas</div><div class="canal-value">{v}</div>{tv}</div>
-                <div><div class="canal-metric">Comissao</div><div class="canal-value">{c}</div>{tc}</div>
-                <div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}</div>{tcl}</div>
-                <div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div>{tctr}</div>
-                <div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div>{ttm}</div>
-                </div></div>""".format(
-                    e=emoji,n=nome,
-                    v=fmt_num(mc["vendas"]),    tv=tr(mc["vendas"],   a.get("vendas",0)),
-                    c=fmt_brl(mc["comissao"]),  tc=tr(mc["comissao"], a.get("comissao",0)),
-                    cl=fmt_num(mc["cliques"]),  tcl=tr(mc["cliques"], a.get("cliques",0)),
-                    ctr=fmt_pct(mc["ctr_shopee"]), tctr=tr(mc["ctr_shopee"], a.get("ctr_shopee",0)),
-                    tm=fmt_brl(mc["ticket"]),   ttm=tr(mc["ticket"],  a.get("ticket",0)),
-                ),unsafe_allow_html=True)
+                st.markdown("""<div class="canal-card"><div class="canal-title">{e} {n}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><div class="canal-metric">Vendas</div><div class="canal-value">{v}</div>{tv}</div><div><div class="canal-metric">Comissao</div><div class="canal-value">{c}</div>{tc}</div><div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}</div>{tcl}</div><div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div>{tctr}</div><div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div>{ttm}</div></div></div>""".format(
+                    e=emoji,n=nome,v=fmt_num(mc["vendas"]),tv=tr(mc["vendas"],a.get("vendas",0)),c=fmt_brl(mc["comissao"]),tc=tr(mc["comissao"],a.get("comissao",0)),
+                    cl=fmt_num(mc["cliques"]),tcl=tr(mc["cliques"],a.get("cliques",0)),ctr=fmt_pct(mc["ctr_shopee"]),tctr=tr(mc["ctr_shopee"],a.get("ctr_shopee",0)),
+                    tm=fmt_brl(mc["ticket"]),ttm=tr(mc["ticket"],a.get("ticket",0))),unsafe_allow_html=True)
             else:
                 st.markdown('<div class="canal-card"><div class="canal-title">{} {}</div><div style="color:#8892a4;">Sem dados</div></div>'.format(emoji,nome),unsafe_allow_html=True)
     canal_card(cc1,m_pago,m_ant_pago,"Pago","📣")
     canal_card(cc2,m_org,m_ant_org,"Organico","🌱")
     canal_card(cc3,m_story,m_ant_story,"Story","📖")
 
-    # ── CAMPANHA PAGO ──
     st.markdown('<div id="pago" class="section-title">📣 Campanha Pago</div>',unsafe_allow_html=True)
     if m_pago:
-        lucro_camp=m_pago["comissao"]-invest_pago
-        roi_camp=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
-        cor_roi="green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
-        mp=m_ant_pago if m_ant_pago else {}
+        lucro_camp=m_pago["comissao"]-invest_pago; roi_camp=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
+        cor_roi="green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red"); mp=m_ant_pago if m_ant_pago else {}
         n_dias_p=len(df_pago_periodo["Data"].unique()) or 1
         if not df_pago_raw.empty:
-            _a_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
-            _a_ini=_a_fim-timedelta(days=(d_fim-d_ini).days)
+            _a_fim=pd.Timestamp(d_ini).date()-timedelta(days=1); _a_ini=_a_fim-timedelta(days=(d_fim-d_ini).days)
             _mp_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_a_ini)&(df_pago_raw["Data"].dt.date<=_a_fim)]
-            imp_p_ant=_mp_ant["Impressoes"].sum()
-            alc_p_ant=_mp_ant["Alcance"].sum()
-            clq_p_ant=_mp_ant["Cliques_Meta"].sum()
-            inv_p_ant=_mp_ant["Investimento"].sum()
-        else:
-            imp_p_ant=alc_p_ant=clq_p_ant=inv_p_ant=0
-        vnd_med=m_pago["vendas"]/n_dias_p
-        com_med=m_pago["comissao"]/n_dias_p
-        inv_med=invest_pago/n_dias_p
-        roi_med=m_pago["roi"]
-
+            imp_p_ant=_mp_ant["Impressoes"].sum(); alc_p_ant=_mp_ant["Alcance"].sum(); clq_p_ant=_mp_ant["Cliques_Meta"].sum(); inv_p_ant=_mp_ant["Investimento"].sum()
+        else: imp_p_ant=alc_p_ant=clq_p_ant=inv_p_ant=0
+        vnd_med=m_pago["vendas"]/n_dias_p; com_med=m_pago["comissao"]/n_dias_p; inv_med=invest_pago/n_dias_p
         def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
-                st.markdown(
-                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
-                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
-                    '</div>'
-                    '<div class="metric-card {c}" style="opacity:0.75;">'
-                    '<div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}'
-                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
-                    unsafe_allow_html=True)
-
+                st.markdown('<div class="metric-card {c}" style="margin-bottom:2px;"><div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}</div><div class="metric-card {c}" style="opacity:0.75;"><div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),unsafe_allow_html=True)
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
         n_dias_p_ant=max(len(df_ant_pago["Data"].unique()),1) if not df_ant_pago.empty else 1
-        vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant)
-        com_med_a=(mp.get("comissao",0)/n_dias_p_ant)
-        inv_med_a=invest_pago_ant/n_dias_p_ant
+        vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant); com_med_a=(mp.get("comissao",0)/n_dias_p_ant); inv_med_a=invest_pago_ant/n_dias_p_ant
         ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
-        lucro_med=lucro_camp/n_dias_p
-        lucro_med_a=(mp.get("lucro",0)/(n_dias_p_ant or 1))
-        _pago_comissao_ant=df_ant[df_ant["Sub_id2"]=="pago"]["Comissao"].sum() if not df_ant.empty else 0
+        lucro_med=lucro_camp/n_dias_p; _pago_comissao_ant=df_ant[df_ant["Sub_id2"]=="pago"]["Comissao"].sum() if not df_ant.empty else 0
         lucro_camp_ant=(_pago_comissao_ant-invest_pago_ant) if invest_pago_ant>0 else None
         lucro_med_ant=(lucro_camp_ant/n_dias_p_ant) if lucro_camp_ant is not None else None
         ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_ant if lucro_med_ant is not None else None),cor_roi)
         ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
-        roi_v=m_pago["roi"]
-        roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
+        roi_v=m_pago["roi"]; roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
         roi_camp_ant=(_pago_comissao_ant-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else None
         ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0,inverted=True),roi_cor)
-        with k5:
-            st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
-
+        with k5: st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
         k6,k7,k8,k9=st.columns(4)
-        cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0
-        cpm_alc_ant=(inv_p_ant/alc_p_ant*1000) if alc_p_ant>0 else 0
-        cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0
-        ctr_meta_ant=(clq_p_ant/alc_p_ant*100) if alc_p_ant>0 else 0
-        freq_ant_p=(imp_p_ant/alc_p_ant) if alc_p_ant>0 else 0
+        cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0; cpm_alc_ant=(inv_p_ant/alc_p_ant*1000) if alc_p_ant>0 else 0
+        cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0; ctr_meta_ant=(clq_p_ant/alc_p_ant*100) if alc_p_ant>0 else 0; freq_ant_p=(imp_p_ant/alc_p_ant) if alc_p_ant>0 else 0
         ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant,inverted=True),"yellow")
         ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant,inverted=True),"yellow")
         ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant,inverted=True),"orange")
         ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue")
-
         if not df_pago_periodo.empty:
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:12px 0 6px 0;">📈 Evolucao Metricas Campanha</div>',unsafe_allow_html=True)
             df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
@@ -936,45 +955,20 @@ def main():
     else:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de campanha paga para o periodo seleccionado.</div>',unsafe_allow_html=True)
 
-    # ── AWARENESS ──
     st.markdown('<div id="awareness" class="section-title">📡 Campanha Awareness</div>',unsafe_allow_html=True)
     if not df_aw.empty:
-        inv_aw_s=df_aw["Investimento_aw"].sum(); imp_aw=df_aw["Impressoes_aw"].sum()
-        alc_aw=df_aw["Alcance_aw"].sum(); vis_aw=df_aw["Visitas_Perfil"].sum()
-        seg_aw=df_aw["Seguidores"].sum(); com_aw=df_aw["Comentarios"].sum() if "Comentarios" in df_aw.columns else 0
-        cpm_aw=(inv_aw_s/imp_aw*1000) if imp_aw>0 else 0
-        cpa_aw=(inv_aw_s/vis_aw) if vis_aw>0 else 0
-        cps_aw=(inv_aw_s/seg_aw) if seg_aw>0 else 0
-        cpc_aw=(inv_aw_s/com_aw) if com_aw>0 else 0
-        freq_aw=imp_aw/alc_aw if alc_aw>0 else 0
+        inv_aw_s=df_aw["Investimento_aw"].sum(); imp_aw=df_aw["Impressoes_aw"].sum(); alc_aw=df_aw["Alcance_aw"].sum()
+        vis_aw=df_aw["Visitas_Perfil"].sum(); seg_aw=df_aw["Seguidores"].sum(); com_aw=df_aw["Comentarios"].sum() if "Comentarios" in df_aw.columns else 0
+        cpm_aw=(inv_aw_s/imp_aw*1000) if imp_aw>0 else 0; cpa_aw=(inv_aw_s/vis_aw) if vis_aw>0 else 0; cps_aw=(inv_aw_s/seg_aw) if seg_aw>0 else 0; cpc_aw=(inv_aw_s/com_aw) if com_aw>0 else 0; freq_aw=imp_aw/alc_aw if alc_aw>0 else 0
         df_aw_ant=semana_anterior(df_aw_raw,d_ini,d_fim) if not df_aw_raw.empty else pd.DataFrame()
-        inv_a=df_aw_ant["Investimento_aw"].sum() if not df_aw_ant.empty else 0
-        imp_a=df_aw_ant["Impressoes_aw"].sum() if not df_aw_ant.empty else 0
-        vis_a=df_aw_ant["Visitas_Perfil"].sum() if not df_aw_ant.empty else 0
-        seg_a=df_aw_ant["Seguidores"].sum() if not df_aw_ant.empty else 0
-        com_a=df_aw_ant["Comentarios"].sum() if not df_aw_ant.empty else 0
-        cpm_a=(inv_a/imp_a*1000) if imp_a>0 else 0
-        cpa_a=(inv_a/vis_a) if vis_a>0 else 0
-        cps_a=(inv_a/seg_a) if seg_a>0 else 0
-        cpc_a=(inv_a/com_a) if com_a>0 else 0
-
-        n_dias_aw=len(df_aw["Data"].unique()) or 1
-        inv_aw_med=inv_aw_s/n_dias_aw
-        inv_aw_med_a=(inv_a/len(df_aw_ant["Data"].unique())) if not df_aw_ant.empty and len(df_aw_ant["Data"].unique())>0 else 0
-
+        inv_a=df_aw_ant["Investimento_aw"].sum() if not df_aw_ant.empty else 0; imp_a=df_aw_ant["Impressoes_aw"].sum() if not df_aw_ant.empty else 0
+        vis_a=df_aw_ant["Visitas_Perfil"].sum() if not df_aw_ant.empty else 0; seg_a=df_aw_ant["Seguidores"].sum() if not df_aw_ant.empty else 0; com_a=df_aw_ant["Comentarios"].sum() if not df_aw_ant.empty else 0
+        cpm_a=(inv_a/imp_a*1000) if imp_a>0 else 0; cpa_a=(inv_a/vis_a) if vis_a>0 else 0; cps_a=(inv_a/seg_a) if seg_a>0 else 0; cpc_a=(inv_a/com_a) if com_a>0 else 0
+        alc_a=df_aw_ant["Alcance_aw"].sum() if not df_aw_ant.empty else 0; freq_a=(imp_a/alc_a) if alc_a>0 else 0
+        n_dias_aw=len(df_aw["Data"].unique()) or 1; inv_aw_med=inv_aw_s/n_dias_aw; inv_aw_med_a=(inv_a/len(df_aw_ant["Data"].unique())) if not df_aw_ant.empty and len(df_aw_ant["Data"].unique())>0 else 0
         def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
-                st.markdown(
-                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
-                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
-                    '</div>'
-                    '<div class="metric-card {c}" style="opacity:0.75;">'
-                    '<div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}'
-                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
-                    unsafe_allow_html=True)
-
-        alc_a=df_aw_ant["Alcance_aw"].sum() if not df_aw_ant.empty else 0
-        freq_a=(imp_a/alc_a) if alc_a>0 else 0
+                st.markdown('<div class="metric-card {c}" style="margin-bottom:2px;"><div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}</div><div class="metric-card {c}" style="opacity:0.75;"><div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),unsafe_allow_html=True)
         aw1,aw2,aw3=st.columns(3)
         pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
         pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a,inverted=True),"yellow")
@@ -983,65 +977,34 @@ def main():
         pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a,inverted=True),"purple")
         pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a,inverted=True),"green")
         pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a,inverted=True),"blue")
-
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
         df_aw_d["CPM"]=(df_aw_d["Invest"]/df_aw_d["Impressoes"]*1000).replace([np.inf,np.nan],0)
         df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
         df_aw_d["CPS"]=(df_aw_d["Invest"]/df_aw_d["Seguidores"]).replace([np.inf,np.nan],0)
         df_aw_d["CPC_aw"]=(df_aw_d["Invest"]/df_aw_d["Comentarios"]).replace([np.inf,np.nan],0)
-        met_aw={"Investimento":"Invest","Impressoes":"Impressoes","Alcance":"Alcance","Visitas ao Perfil":"Visitas","Seguidores":"Seguidores","Comentarios":"Comentarios","CPM":"CPM","Custo/Visita":"CPA","Custo/Seguidor":"CPS","Custo/Comentario":"CPC_aw"}
+        met_aw={"Investimento":"Invest","Impressoes":"Impressoes","Visitas ao Perfil":"Visitas","Seguidores":"Seguidores","Comentarios":"Comentarios","CPM":"CPM","Custo/Visita":"CPA","Custo/Seguidor":"CPS","Custo/Comentario":"CPC_aw"}
         da={k:v for k,v in met_aw.items() if v in df_aw_d.columns}
         awc1,awc2=st.columns(2)
         with awc1: am1=st.selectbox("Barra",list(da.keys()),index=0,key="am1")
         with awc2: am2=st.selectbox("Linha",list(da.keys()),index=3,key="am2")
         df_awf=df_aw_d[(df_aw_d[da[am1]]>0)|(df_aw_d[da[am2]]>0)]
         st.plotly_chart(dual_chart(df_awf,"Data",da[am1],da[am2],"{} vs {}".format(am1,am2),am1,am2),use_container_width=True)
-
-        df_os=df[df["Sub_id2"].isin(["organico","story"])].copy()
-        df_os["Lucro_os"]=df_os["Comissao"]
+        df_os=df[df["Sub_id2"].isin(["organico","story"])].copy(); df_os["Lucro_os"]=df_os["Comissao"]
         df_os_d=df_os.groupby("Data").agg(Vendas=("Vendas","sum"),Lucro_os=("Lucro_os","sum")).reset_index()
         df_aw_s2=df_aw_d[["Data","Invest"]].copy(); df_aw_s2["Data"]=df_aw_s2["Data"]+pd.Timedelta(days=3)
         df_imp=df_os_d.merge(df_aw_s2.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
         if len(df_imp)>3 and df_imp["Invest_lag"].sum()>0:
-            corr_v=df_imp["Invest_lag"].corr(df_imp["Vendas"])
-            corr_l=df_imp["Invest_lag"].corr(df_imp["Lucro_os"])
+            corr_v=df_imp["Invest_lag"].corr(df_imp["Vendas"]); corr_l=df_imp["Invest_lag"].corr(df_imp["Lucro_os"])
             aw_t=dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",legend=dict(font=dict(color="#f6e8d8",size=11),bgcolor="rgba(30,18,16,0.8)"))
             def corr_badge(c):
-                cor="#7a9e4e" if c>0.3 else ("#c0392b" if c<-0.1 else "#c5936d")
-                txt="positiva" if c>0.3 else ("sem correlacao" if c>=-0.1 else "negativa")
-                return cor,txt
+                cor="#7a9e4e" if c>0.3 else ("#c0392b" if c<-0.1 else "#c5936d"); txt="positiva" if c>0.3 else ("sem correlacao" if c>=-0.1 else "negativa"); return cor,txt
             cv_cor,cv_txt=corr_badge(corr_v); cl_cor,cl_txt=corr_badge(corr_l)
-            st.markdown(
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;">'
-                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;">'
-                '<span style="color:#c5936d;font-size:11px;">Awareness -> Vendas Org/Story (lag 3d): </span>'
-                '<span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span>'
-                ' <span style="color:#c5936d;font-size:10px;">— {}</span></div>'
-                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;">'
-                '<span style="color:#c5936d;font-size:11px;">Awareness -> Lucro Org/Story (lag 3d): </span>'
-                '<span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span>'
-                ' <span style="color:#c5936d;font-size:10px;">— {}</span></div>'
-                '</div>'.format(cv_cor,corr_v,cv_txt,cl_cor,corr_l,cl_txt),
-                unsafe_allow_html=True)
-            if len(df_imp)>=7:
-                df_imp["corr_v_mm"]=df_imp["Invest_lag"].rolling(7,min_periods=3).corr(df_imp["Vendas"])
-                df_imp["corr_l_mm"]=df_imp["Invest_lag"].rolling(7,min_periods=3).corr(df_imp["Lucro_os"])
-                df_ic=df_imp.dropna(subset=["corr_v_mm"])
-                if not df_ic.empty:
-                    fig_ct=go.Figure()
-                    fig_ct.add_trace(go.Scatter(x=df_ic["Data"],y=df_ic["corr_v_mm"],mode="lines+markers",line=dict(color="#bd6d34",width=2),name="Awareness -> Vendas"))
-                    fig_ct.add_trace(go.Scatter(x=df_ic["Data"],y=df_ic["corr_l_mm"],mode="lines+markers",line=dict(color="#9c5834",width=2,dash="dash"),name="Awareness -> Lucro"))
-                    fig_ct.add_hline(y=0.3,line_dash="dash",line_color="#7a9e4e",annotation_text="Positiva (0.3)")
-                    fig_ct.add_hline(y=0,line_dash="dot",line_color="#c5936d")
-                    fig_ct.update_layout(title="Tendencia de Correlacao Awareness (janela 7d)",yaxis=dict(title="Correlacao",color="#c5936d",gridcolor="#2a1f1a"),**aw_t)
-                    st.plotly_chart(fig_ct,use_container_width=True)
+            st.markdown('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;"><div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:10px;">— {}</span></div><div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Awareness -> Lucro Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:10px;">— {}</span></div></div>'.format(cv_cor,corr_v,cv_txt,cl_cor,corr_l,cl_txt),unsafe_allow_html=True)
     else:
         n=len(df_aw_raw) if not df_aw_raw.empty else 0
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format("Sem dados na aba Resultado Awareness." if n==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n)),unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # ── CRUZAMENTO DE METRICAS ──
     st.markdown('<div id="cruzamento" class="section-title">🔀 Cruzamento de Metricas</div>',unsafe_allow_html=True)
     df_cross=df_daily.copy()
     if not df_aw.empty:
@@ -1049,19 +1012,7 @@ def main():
         df_cross=df_cross.merge(df_aw_cx,on="Data",how="left").fillna(0)
     else:
         for c in ["Visitas","Seguidores","Comentarios"]: df_cross[c]=0.0
-
-    met_disp={
-        "Invest. Total (Pago+Awareness)":"Investimento",
-        "Invest. Pago":"Invest_pago",
-        "Invest. Awareness":"Invest_aw",
-        "Vendas":"Vendas",
-        "Comissao":"Comissao",
-        "Cliques":"Cliques",
-        "Ticket Medio":"Ticket_Medio",
-        "Visitas Perfil":"Visitas",
-        "Seguidores":"Seguidores",
-        "Comentarios":"Comentarios",
-    }
+    met_disp={"Invest. Total (Pago+Awareness)":"Investimento","Invest. Pago":"Invest_pago","Invest. Awareness":"Invest_aw","Vendas":"Vendas","Comissao":"Comissao","Cliques":"Cliques","Ticket Medio":"Ticket_Medio","Visitas Perfil":"Visitas","Seguidores":"Seguidores","Comentarios":"Comentarios"}
     disp={k:v for k,v in met_disp.items() if v in df_cross.columns}
     cx1,cx2=st.columns(2)
     with cx1: met1=st.selectbox("Metrica 1 (barras)",list(disp.keys()),index=0,key="cx1")
@@ -1071,7 +1022,6 @@ def main():
         df_cf=df_cross[(df_cross[col_x]>0)|(df_cross[col_y]>0)]
         st.plotly_chart(dual_chart(df_cf,"Data",col_x,col_y,"{} vs {}".format(met1,met2),met1,met2),use_container_width=True)
 
-    # ── EVOLUCAO ──
     st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>',unsafe_allow_html=True)
     met_ev={"Comissao":"Comissao","Vendas":"Vendas","Cliques":"Cliques","Investimento":"Investimento","Ticket Medio":"Ticket_Medio"}
     ev_sel=st.multiselect("Metricas",list(met_ev.keys()),default=["Comissao","Vendas"],key="ev_sel")
@@ -1086,7 +1036,6 @@ def main():
         fig.update_layout(title="Evolucao + Media Movel 7 dias",hovermode="x unified",**PLOTLY_THEME)
         st.plotly_chart(fig,use_container_width=True)
 
-    # ── COMPARACAO CANAIS ──
     st.markdown('<div class="section-title">📊 Comparacao por Canal</div>',unsafe_allow_html=True)
     df_viz=df[df["Sub_id2"].str.strip()!=""].copy()
     df_canal=df_viz.groupby("Sub_id2").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")).reset_index()
@@ -1098,7 +1047,6 @@ def main():
         fig=px.pie(df_canal,names="Sub_id2",values="Vendas",title="Distribuicao Vendas",color_discrete_sequence=["#bd6d34","#9c5834","#c5936d"])
         fig.update_traces(textinfo="percent+label"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
-    # ── CAMPEOES ──
     st.markdown('<div id="campeoes" class="section-title">🏆 Itens Campeoes</div>',unsafe_allow_html=True)
     df_s3=df[df["Sub_id3"]!=""].groupby("Sub_id3").agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
     df_s3["CTR"]=(df_s3["Vendas"]/df_s3["Cliques"]*100).fillna(0)
@@ -1122,12 +1070,10 @@ def main():
         fig=px.bar(t5ctr,x="CTR",y="Sub_id3",orientation="h",title="Top 5 por CTR",text="CTR",color_discrete_sequence=["#bd6d34"])
         fig.update_traces(texttemplate="%{text:.2f}%",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
-    # ── IPA ──
     st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>',unsafe_allow_html=True)
     st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;color:#c5936d;font-size:12px;">O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo. Score 0-100. <b style="color:#c0392b;">N/A</b> = menos de 3 vendas.</div>',unsafe_allow_html=True)
     df_ipa=df[df["Sub_id2"].isin(["organico","story"])].groupby(["Sub_id3","Sub_id1"]).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
-    df_ipa["CTR"]=(df_ipa["Vendas"]/df_ipa["Cliques"]*100).fillna(0)
-    df_ipa["Ticket"]=(df_ipa["Comissao"]/df_ipa["Vendas"]).fillna(0)
+    df_ipa["CTR"]=(df_ipa["Vendas"]/df_ipa["Cliques"]*100).fillna(0); df_ipa["Ticket"]=(df_ipa["Comissao"]/df_ipa["Vendas"]).fillna(0)
     df_v=df_ipa[df_ipa["Vendas"]>=3].copy()
     if not df_v.empty:
         for col in ["Comissao","Vendas","Ticket","CTR"]:
@@ -1138,8 +1084,7 @@ def main():
     ja_pago=set(df[df["Sub_id2"]=="pago"]["Sub_id3"].unique())
     df_ipa=df_ipa.merge(df_v[["Sub_id3","Sub_id1","IPA"]] if not df_v.empty else pd.DataFrame(columns=["Sub_id3","Sub_id1","IPA"]),on=["Sub_id3","Sub_id1"],how="left")
     df_ipa=df_ipa[~df_ipa["Sub_id3"].isin(ja_pago)]
-    df_ipa["IPA_d"]=df_ipa["IPA"].apply(lambda x:"{:.1f}".format(x) if pd.notna(x) else "N/A")
-    df_ipa["IPA_s"]=df_ipa["IPA"].fillna(-1)
+    df_ipa["IPA_d"]=df_ipa["IPA"].apply(lambda x:"{:.1f}".format(x) if pd.notna(x) else "N/A"); df_ipa["IPA_s"]=df_ipa["IPA"].fillna(-1)
     df_ipa=df_ipa.sort_values("IPA_s",ascending=False).reset_index(drop=True)
     df_ic=df_ipa[df_ipa["IPA_s"]>=0].head(15).sort_values("IPA_s",ascending=True)
     if not df_ic.empty:
@@ -1152,20 +1097,12 @@ def main():
     df_it["Ticket (R$)"]=df_it["Ticket (R$)"].apply(lambda x:"{:.2f}".format(x))
     df_it["Cliques"]=df_it["Cliques"].apply(lambda x:"{:,.0f}".format(x).replace(",","."))
     df_it["Vendas"]=df_it["Vendas"].apply(lambda x:"{:,.0f}".format(x))
-    styled = df_it.style.set_properties(
-        subset=["Sub_id3","Sub_id1"], **{"text-align":"left"}
-    ).set_properties(
-        subset=["IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"], **{"text-align":"center"}
-    ).set_table_styles([
-        {"selector":"th","props":[("text-align","center")]}
-    ])
+    styled=df_it.style.set_properties(subset=["Sub_id3","Sub_id1"],**{"text-align":"left"}).set_properties(subset=["IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"],**{"text-align":"center"}).set_table_styles([{"selector":"th","props":[("text-align","center")]}])
     st.dataframe(styled,use_container_width=True,height=300)
 
-    # ── TABELA ──
     st.markdown('<div class="section-title">📋 Dados Detalhados</div>',unsafe_allow_html=True)
     df_t=df[["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","Comissao"]].copy()
-    df_t["Data"]=df_t["Data"].dt.strftime("%Y-%m-%d")
-    df_t=df_t.sort_values("Comissao",ascending=False).reset_index(drop=True)
+    df_t["Data"]=df_t["Data"].dt.strftime("%Y-%m-%d"); df_t=df_t.sort_values("Comissao",ascending=False).reset_index(drop=True)
     busca=st.text_input("🔍 Pesquisar",placeholder="Ex: pago, 260302fronha...",key="busca")
     if busca: df_t=df_t[df_t.apply(lambda r:busca.lower() in str(r).lower(),axis=1)]
     st.dataframe(df_t.style.format({"Comissao":"R$ {:.2f}"}),use_container_width=True,height=400)
@@ -1173,53 +1110,36 @@ def main():
     html_r="<html><body><h1>Relatorio Destrava</h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
     st.download_button("📥 Download HTML",data=html_r.encode("utf-8"),file_name="relatorio_{}_{}.html".format(d_ini,d_fim),mime="text/html",key="dl_btn")
 
-    # ── INSIGHTS IA ──
     st.markdown('<div id="insights-ia" class="section-title">🤖 DESTRAVA AI</div>',unsafe_allow_html=True)
-    st.markdown("""<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-    <div style="background:#1a1210;border:1px solid #bd6d34;border-radius:10px;padding:16px;"><div style="color:#bd6d34;font-size:13px;font-weight:700;margin-bottom:6px;">Campanha Paga</div><div style="color:#c5936d;font-size:12px;">Analise tecnica de CPM, CPC, CAC, frequencia e funil.</div></div>
-    <div style="background:#1a1210;border:1px solid #9c5834;border-radius:10px;padding:16px;"><div style="color:#9c5834;font-size:13px;font-weight:700;margin-bottom:6px;">Todos os Canais + Criativos</div><div style="color:#c5936d;font-size:12px;">Comparacao entre canais + sugestao de criativos baseada no IPA.</div></div>
-    </div><div style="color:#c5936d;font-size:11px;margin-bottom:12px;">(*) Cada analise ~$0.01 de creditos Anthropic.</div>""",unsafe_allow_html=True)
-
+    st.markdown("""<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;"><div style="background:#1a1210;border:1px solid #bd6d34;border-radius:10px;padding:16px;"><div style="color:#bd6d34;font-size:13px;font-weight:700;margin-bottom:6px;">Campanha Paga</div><div style="color:#c5936d;font-size:12px;">Analise tecnica de CPM, CPC, CAC, frequencia e funil.</div></div><div style="background:#1a1210;border:1px solid #9c5834;border-radius:10px;padding:16px;"><div style="color:#9c5834;font-size:13px;font-weight:700;margin-bottom:6px;">Todos os Canais + Criativos</div><div style="color:#c5936d;font-size:12px;">Comparacao entre canais + sugestao de criativos baseada no IPA.</div></div></div><div style="color:#c5936d;font-size:11px;margin-bottom:12px;">(*) Cada analise ~$0.01 de creditos Anthropic.</div>""",unsafe_allow_html=True)
     if "analise_camp" not in st.session_state: st.session_state.analise_camp=None
     if "analise_geral" not in st.session_state: st.session_state.analise_geral=None
     btn1,btn2,_=st.columns([1,1,2])
     with btn1: gerar_camp=st.button("Analisar Campanha Paga",use_container_width=True,key="btn_camp")
     with btn2: gerar_geral=st.button("Analisar Todos + Criativos",use_container_width=True,key="btn_geral")
-
     if gerar_camp and m_pago and not df_pago_periodo.empty:
         with st.spinner("A analisar..."):
             try:
                 api_key=st.secrets.get("anthropic",{}).get("api_key","")
-                dados="Periodo:{} a {}\nInvest:{:.2f}|Vendas:{:.0f}|Comissao:{:.2f}|Lucro:{:.2f}|ROI:{:.2f}\nCPM:{:.2f}|CPC:{:.2f}|CAC:{:.2f}|Freq:{:.2f}x\nCTR_Meta:{:.2f}%|CTR_Conv:{:.2f}%\nFunil:{:.0f}imp->{:.0f}alc->{:.0f}clq->{:.0f}vnd".format(
-                    d_ini,d_fim,invest_pago,m_pago["vendas"],m_pago["comissao"],m_pago["lucro"],m_pago["roi"],
-                    m_pago.get("cpm_imp",0),m_pago.get("cpc",0),m_pago.get("cac",0),m_pago.get("freq",0),
-                    m_pago.get("ctr_meta",0),m_pago.get("ctr_cv",0),
-                    m_pago.get("impressoes",0),m_pago.get("alcance",0),m_pago.get("cliques_meta",0),m_pago["vendas"])
+                dados="Periodo:{} a {}\nInvest:{:.2f}|Vendas:{:.0f}|Comissao:{:.2f}|Lucro:{:.2f}|ROI:{:.2f}\nCPM:{:.2f}|CPC:{:.2f}|CAC:{:.2f}|Freq:{:.2f}x\nCTR_Meta:{:.2f}%|CTR_Conv:{:.2f}%\nFunil:{:.0f}imp->{:.0f}alc->{:.0f}clq->{:.0f}vnd".format(d_ini,d_fim,invest_pago,m_pago["vendas"],m_pago["comissao"],m_pago["lucro"],m_pago["roi"],m_pago.get("cpm_imp",0),m_pago.get("cpc",0),m_pago.get("cac",0),m_pago.get("freq",0),m_pago.get("ctr_meta",0),m_pago.get("ctr_cv",0),m_pago.get("impressoes",0),m_pago.get("alcance",0),m_pago.get("cliques_meta",0),m_pago["vendas"])
                 prompt="Es especialista senior em Meta Ads e afiliados Shopee. Linguagem tecnica.\nFornece: 1.Diagnostico tecnico. 2.2-3 alertas criticos. 3.2-3 acoes concretas.\nDados:"+dados
                 resp=requests.post("https://api.anthropic.com/v1/messages",headers={"Content-Type":"application/json","x-api-key":api_key,"anthropic-version":"2023-06-01"},json={"model":"claude-sonnet-4-20250514","max_tokens":1000,"messages":[{"role":"user","content":prompt}]},timeout=30)
                 rj=resp.json()
                 if "error" in rj: raise Exception(rj["error"]["message"])
                 st.session_state.analise_camp=(rj["content"][0]["text"],str(d_ini),str(d_fim))
             except Exception as e: st.error("Erro: {}".format(str(e)))
-
     if gerar_geral:
         with st.spinner("A analisar todos os canais..."):
             try:
                 api_key=st.secrets.get("anthropic",{}).get("api_key","")
                 top_ipa=df_v.nlargest(8,"IPA")[["Sub_id1","Sub_id3","IPA","Comissao","Vendas","CTR","Ticket"]].to_string(index=False) if not df_v.empty else "Sem dados"
-                dados_g="Periodo:{} a {}\nComissao:{:.2f}|Lucro:{:.2f}|ROI:{:.2f}|Vendas:{:.0f}\nPago:{:.0f}vnd|R${:.2f}|ROI:{:.2f}|Ticket:{:.2f}\nOrganico:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nStory:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nInvest.Awareness:R${:.2f}\nTop IPA:\n{}".format(
-                    d_ini,d_fim,m["comissao"],m["lucro"],m["roi"],m["vendas"],
-                    m_pago["vendas"] if m_pago else 0,m_pago["comissao"] if m_pago else 0,m_pago["roi"] if m_pago else 0,m_pago["ticket"] if m_pago else 0,
-                    m_org["vendas"] if m_org else 0,m_org["comissao"] if m_org else 0,m_org["ticket"] if m_org else 0,
-                    m_story["vendas"] if m_story else 0,m_story["comissao"] if m_story else 0,m_story["ticket"] if m_story else 0,
-                    invest_aw,top_ipa)
+                dados_g="Periodo:{} a {}\nComissao:{:.2f}|Lucro:{:.2f}|ROI:{:.2f}|Vendas:{:.0f}\nPago:{:.0f}vnd|R${:.2f}|ROI:{:.2f}|Ticket:{:.2f}\nOrganico:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nStory:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nInvest.Awareness:R${:.2f}\nTop IPA:\n{}".format(d_ini,d_fim,m["comissao"],m["lucro"],m["roi"],m["vendas"],m_pago["vendas"] if m_pago else 0,m_pago["comissao"] if m_pago else 0,m_pago["roi"] if m_pago else 0,m_pago["ticket"] if m_pago else 0,m_org["vendas"] if m_org else 0,m_org["comissao"] if m_org else 0,m_org["ticket"] if m_org else 0,m_story["vendas"] if m_story else 0,m_story["comissao"] if m_story else 0,m_story["ticket"] if m_story else 0,invest_aw,top_ipa)
                 prompt_g="Es especialista senior Meta Ads e afiliados Shopee. Linguagem tecnica.\nCONTEXTO: PAGO=unico com investimento. ORGANICO/STORY=custo zero. NUNCA migrar verba.\nFornece: 1.Diagnostico. 2.Avaliacao cada canal. 3.Acoes concretas. 4.CRIATIVOS PARA ANUNCIO baseado no IPA com CAC alvo (ticket*0.3-0.5).\nDados:"+dados_g
                 resp2=requests.post("https://api.anthropic.com/v1/messages",headers={"Content-Type":"application/json","x-api-key":api_key,"anthropic-version":"2023-06-01"},json={"model":"claude-sonnet-4-20250514","max_tokens":1200,"messages":[{"role":"user","content":prompt_g}]},timeout=30)
                 rj2=resp2.json()
                 if "error" in rj2: raise Exception(rj2["error"]["message"])
                 st.session_state.analise_geral=(rj2["content"][0]["text"],str(d_ini),str(d_fim))
             except Exception as e: st.error("Erro: {}".format(str(e)))
-
     if st.session_state.analise_camp:
         a,di,df_=st.session_state.analise_camp
         st.markdown('<div style="background:linear-gradient(135deg,#1a1210,#221a16);border-radius:12px;padding:20px;margin-top:12px;border-left:4px solid #bd6d34;border:1px solid #3a2c28;"><div style="color:#bd6d34;font-size:13px;font-weight:700;margin-bottom:12px;">Campanha Paga — {} a {}</div><div style="color:#f6e8d8;font-size:14px;line-height:1.8;">{}</div></div>'.format(di,df_,a.replace("\n","<br>")),unsafe_allow_html=True)
