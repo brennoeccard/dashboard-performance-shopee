@@ -256,14 +256,16 @@ def main():
 
     # ── FILTROS ──
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
+    hoje=date.today()
+    ref=hoje  # presets ancorados em hoje, não no último dia dos dados
     if "preset" not in st.session_state: st.session_state.preset="all"
     p=st.session_state.get("preset","all")
-    if   p=="7d":  d_ini_def=max(data_max-timedelta(days=6),data_min)
-    elif p=="14d": d_ini_def=max(data_max-timedelta(days=13),data_min)
-    elif p=="28d": d_ini_def=max(data_max-timedelta(days=27),data_min)
-    elif p=="30d": d_ini_def=max(data_max-timedelta(days=29),data_min)
+    if   p=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
+    elif p=="14d": d_ini_def=max(ref-timedelta(days=13),data_min)
+    elif p=="28d": d_ini_def=max(ref-timedelta(days=27),data_min)
+    elif p=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
     else:          d_ini_def=data_min
-    d_fim_def=data_max
+    d_fim_def=hoje
 
     sid2_opts=sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
     sid1_opts=sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
@@ -282,7 +284,7 @@ def main():
             if st.button("30 dias",use_container_width=True,key="b30"): st.session_state.preset="30d"; st.rerun()
         with b5:
             if st.button("Tudo",use_container_width=True,key="ba"): st.session_state.preset="all"; st.rerun()
-        datas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=data_max,label_visibility="collapsed")
+        datas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=hoje,label_visibility="collapsed")
         d_ini,d_fim=(datas if isinstance(datas,tuple) and len(datas)==2 else (d_ini_def,d_fim_def))
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>',unsafe_allow_html=True)
