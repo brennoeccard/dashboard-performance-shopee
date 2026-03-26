@@ -160,7 +160,7 @@ def ler_dados():
 @st.cache_data(ttl=300)
 def ler_pago():
     svc=autenticar()
-    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_PAGO}!A1:L").execute()
+    res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_PAGO}!A1:K").execute()
     vals=res.get("values",[])
     if len(vals)<2: return pd.DataFrame()
     cab=vals[0]; linhas=vals[1:]
@@ -176,7 +176,9 @@ def ler_pago():
     r["Impressoes"]=df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
     r["Alcance"]=df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
     r["Cliques_Meta"]=df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
-    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip().apply(lambda x: "" if x.lower() in ["nan","none",""] else x) if df.shape[1]>8 else ""
+    # Coluna 8 = CTR Meta (ignorada nos cálculos, já calculamos no código)
+    # Coluna 9 = Sub_id4 (público do teste)
+    r["Sub_id4"]=df.iloc[:,9].astype(str).str.strip().apply(lambda x: "" if x.lower() in ["nan","none",""] else x) if df.shape[1]>9 else ""
     r=r.dropna(subset=["Data"])
     r=r[r["Investimento"]>0]
     return r
