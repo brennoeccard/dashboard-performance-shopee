@@ -153,7 +153,7 @@ def ler_dados():
     df["Sub_id2"]=df["Sub_id2"].fillna("").str.strip().str.lower()
     df["Sub_id1"]=df["Sub_id1"].fillna("").str.strip()
     df["Sub_id3"]=df["Sub_id3"].fillna("").str.strip()
-    if "Sub_id4" in df.columns: df["Sub_id4"]=df["Sub_id4"].fillna("").str.strip()
+    if "Sub_id4" in df.columns: df["Sub_id4"]=df["Sub_id4"].astype(str).str.strip().apply(lambda x: "" if x.lower() in ["nan","none",""] else x)
     else: df["Sub_id4"]=""
     return df
 
@@ -176,7 +176,7 @@ def ler_pago():
     r["Impressoes"]=df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
     r["Alcance"]=df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
     r["Cliques_Meta"]=df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
-    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip().replace("nan","").replace("None","") if df.shape[1]>8 else ""
+    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip().apply(lambda x: "" if x.lower() in ["nan","none",""] else x) if df.shape[1]>8 else ""
     r=r.dropna(subset=["Data"])
     r=r[r["Investimento"]>0]
     return r
