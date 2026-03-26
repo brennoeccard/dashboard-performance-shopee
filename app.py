@@ -257,7 +257,8 @@ def main():
     # ── FILTROS ──
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
     hoje=date.today()
-    ref=hoje  # presets ancorados em hoje, não no último dia dos dados
+    ontem=hoje-timedelta(days=1)
+    ref=ontem  # presets ancorados em ontem — hoje sempre excluído (dados incompletos)
     if "preset" not in st.session_state: st.session_state.preset="all"
     p=st.session_state.get("preset","all")
     if   p=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
@@ -265,7 +266,7 @@ def main():
     elif p=="28d": d_ini_def=max(ref-timedelta(days=27),data_min)
     elif p=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
     else:          d_ini_def=data_min
-    d_fim_def=hoje
+    d_fim_def=ontem
 
     sid2_opts=sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
     sid1_opts=sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
@@ -284,7 +285,7 @@ def main():
             if st.button("30 dias",use_container_width=True,key="b30"): st.session_state.preset="30d"; st.rerun()
         with b5:
             if st.button("Tudo",use_container_width=True,key="ba"): st.session_state.preset="all"; st.rerun()
-        datas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=hoje,label_visibility="collapsed")
+        datas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=ontem,label_visibility="collapsed")
         d_ini,d_fim=(datas if isinstance(datas,tuple) and len(datas)==2 else (d_ini_def,d_fim_def))
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>',unsafe_allow_html=True)
@@ -326,6 +327,30 @@ def main():
     if df.empty:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:24px;text-align:center;"><div style="font-size:32px;">📭</div><div style="color:#f6e8d8;font-size:16px;">Sem dados para o periodo seleccionado</div><div style="color:#c5936d;font-size:13px;">Dados disponiveis ate {}.</div></div>'.format(data_max),unsafe_allow_html=True)
         st.stop()
+
+    # ── AVISO DE GAPS ──
+    import datetime as _dt
+    _todas_datas = set(df_raw[(df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim)]["Data"].dt.date.unique())
+    _n_dias = (d_fim - d_ini).days + 1
+    _datas_esperadas = {d_ini + _dt.timedelta(days=i) for i in range(_n_dias)}
+    _gaps = sorted(_datas_esperadas - _todas_datas)
+    # Ignorar dias futuros (hoje em diante) — normal não ter dados ainda
+    _hoje = _dt.date.today()
+    _gaps = [d for d in _gaps if d < _hoje and d <= ontem]
+    if _gaps:
+        if len(_gaps) == 1:
+            _gaps_txt = _gaps[0].strftime("%d/%m")
+        elif len(_gaps) <= 3:
+            _gaps_txt = ", ".join(d.strftime("%d/%m") for d in _gaps)
+        else:
+            _gaps_txt = ", ".join(d.strftime("%d/%m") for d in _gaps[:3]) + f" (+{len(_gaps)-3})"
+        st.markdown(
+            f'''<div style="background:#1a1210;border:1px solid #d4a017;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+            <span style="font-size:14px;">⚠️</span>
+            <span style="color:#d4a017;font-size:12px;font-weight:600;">Sem dados em: <span style="font-weight:400;">{_gaps_txt}</span> — o script pode não ter corrido nesses dias.</span>
+            </div>''',
+            unsafe_allow_html=True
+        )
 
     # ── CALCULAR METRICAS ──
     # Investimento: sempre do df_pago_raw (nunca do df merged)
