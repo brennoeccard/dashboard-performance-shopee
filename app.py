@@ -291,14 +291,25 @@ def render_publicos(df_raw, df_pago_raw):
     publicos = sorted(df_p["Sub_id4"].unique())
     n_dias_periodo = max((d_fim - d_ini).days + 1, 1)
 
-    # ── FIX BUG 1 ──
-    # Mapear Sub_id4 → Sub_id1s presentes no df_raw (Resultados Shopee)
-    # para poder cruzar com df_pago_raw que só tem Sub_id1
-    pub_to_sid1 = (
-        df_p.groupby("Sub_id4")["Sub_id1"]
-        .apply(lambda x: list(x.dropna().unique()))
-        .to_dict()
-    )
+    # ── FIX CRUZAMENTO CORRECTO ──
+    # A chave de ligação entre df_raw e df_pago_raw é Sub_id1 + Sub_id3 (composta).
+    # Cada público (Sub_id4) está associado a pares (Sub_id1, Sub_id3) específicos.
+    # Filtrar df_pago_raw APENAS por linhas COM Sub_id4 preenchido (exclui campanhas
+    # genéricas como 260302fronha que não têm público definido).
+    df_pago_com_pub = pd.DataFrame()
+    if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
+        df_pago_com_pub = df_pago_raw[
+            (df_pago_raw["Sub_id4"].astype(str).str.strip().replace("nan","") != "") &
+            (df_pago_raw["Data"].dt.date >= d_ini) &
+            (df_pago_raw["Data"].dt.date <= d_fim)
+        ].copy()
+
+    # Mapear Sub_id4 → lista de pares (Sub_id1, Sub_id3) do df_pago_com_pub
+    pub_to_pairs = {}
+    if not df_pago_com_pub.empty:
+        for pub_val, grp in df_pago_com_pub.groupby("Sub_id4"):
+            pairs = list(grp[["Sub_id1","Sub_id3"]].drop_duplicates().itertuples(index=False, name=None))
+            pub_to_pairs[pub_val] = pairs
 
     rows = []
     for pub in publicos:
@@ -309,19 +320,12 @@ def render_publicos(df_raw, df_pago_raw):
         ctr       = vendas/cliques if cliques>0 else 0
         ticket    = comissao/vendas if vendas>0 else 0
 
-        # ── CROSS: usar Sub_id1s deste público para buscar métricas no df_pago_raw ──
-        sid1s_do_pub = pub_to_sid1.get(pub, [])
-
         invest = 0.0
         impressoes = alcance = cliques_meta = 0.0
 
-        if not df_pago_raw.empty and sid1s_do_pub:
-            mask_pago = (
-                (df_pago_raw["Data"].dt.date >= d_ini) &
-                (df_pago_raw["Data"].dt.date <= d_fim) &
-                (df_pago_raw["Sub_id1"].isin(sid1s_do_pub))
-            )
-            df_camp = df_pago_raw[mask_pago]
+        if not df_pago_com_pub.empty:
+            # Filtrar df_pago_com_pub directamente pelo Sub_id4 — é a forma mais directa
+            df_camp = df_pago_com_pub[df_pago_com_pub["Sub_id4"] == pub]
             invest       = df_camp["Investimento"].sum()
             impressoes   = df_camp["Impressoes"].sum()
             alcance      = df_camp["Alcance"].sum()
@@ -428,10 +432,11 @@ def render_publicos(df_raw, df_pago_raw):
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Impressões</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Impressões"]:,}</div></div>
                 <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Alcance</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Alcance"]:,}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CTR Meta</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["CTR Meta"]:.2f}%</div></div>
                 <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPM</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPM"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Cliques</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Cliques Meta"]:,}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CTR Meta</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["CTR Meta"]:.2f}%</div></div>
                 <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPC"]:.2f}</div></div>
-                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Frequência</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Frequência"]:.2f}x</div></div>
+                <div style="grid-column:span 2;"><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Frequência</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Frequência"]:.2f}x</div></div>
             </div></div>
             </div>''', unsafe_allow_html=True)
 
