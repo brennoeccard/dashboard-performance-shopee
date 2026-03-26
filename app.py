@@ -68,11 +68,8 @@ def card(label,value,color="blue",delta_html_str="",sparkline_fig=None):
     if sparkline_fig: st.plotly_chart(sparkline_fig,use_container_width=True,config={"displayModeBar":False})
 
 def delta_html(val,ref,inverted=False):
-    """inverted=True para metricas onde queda e boa (CPM, CPC, CAC, custos)"""
     if ref is None or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
-    # Sempre calcular pct mesmo com sinais diferentes
     if ref<0 and val>=0:
-        # De negativo para positivo = melhoria - mostrar como +X%
         pct=(val-ref)/abs(ref)*100
         if not inverted: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
         else: return '<span class="metric-delta-neg">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
@@ -148,7 +145,6 @@ def ler_dados():
     cab=vals[0]; linhas=vals[1:]; mc=len(cab)
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=cab)
-    # Rename por posicao (cabecalho pode variar, ex: "Clique" vs "Cliques")
     nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao","Sub_id4"]
     df=df.rename(columns={df.columns[i]:nomes[i] for i in range(min(len(df.columns),len(nomes)))})
     for col in ["Cliques","Vendas","Comissao"]: df[col]=df[col].apply(parse_num)
@@ -163,7 +159,6 @@ def ler_dados():
 
 @st.cache_data(ttl=300)
 def ler_pago():
-    # Resultados Pago: Data|Sub_id2|Sub_id1|Sub_id3|Investimento|Impressoes|Alcance|Cliques_Meta
     svc=autenticar()
     res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_PAGO}!A1:L").execute()
     vals=res.get("values",[])
@@ -188,7 +183,6 @@ def ler_pago():
 
 @st.cache_data(ttl=300)
 def ler_awareness():
-    # Resultado Awareness: Data|Sub_id2|Investimento|Impressoes|Alcance|Visitas|Seguidores|Comentarios
     svc=autenticar()
     res=svc.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID,range=f"{SHEET_AWARENESS}!A1:H").execute()
     vals=res.get("values",[])
@@ -230,13 +224,19 @@ def check_login():
     return True
 
 
+# ══════════════════════════════════════════════════════════════════════
+# BUG 1 FIX — Teste de Públicos
+# PROBLEMA ORIGINAL: df_pago_raw não tem Sub_id4 → cruzamento nunca batia
+# FIX: cruzar por Sub_id1 (chave comum entre df_raw e df_pago_raw),
+#      agrupando as métricas de campanha pela soma dos Sub_id1 presentes
+#      em cada público (Sub_id4), dentro do período seleccionado.
+# ══════════════════════════════════════════════════════════════════════
 def render_publicos(df_raw, df_pago_raw):
     """Página de análise de teste de públicos (Sub_id4)."""
     from datetime import date, timedelta
 
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
 
-    # Filtrar só linhas com Sub_id4 preenchido e canal pago — o resto é ignorado
     if "Sub_id4" not in df_raw.columns:
         df_p = pd.DataFrame()
     else:
@@ -255,7 +255,6 @@ def render_publicos(df_raw, df_pago_raw):
 
     # ── FILTRO DE PERÍODO ──
     data_min = df_p["Data"].min().date()
-    data_max_d = df_p["Data"].max().date()
     hoje = date.today()
     ontem = hoje - timedelta(days=1)
 
@@ -282,7 +281,6 @@ def render_publicos(df_raw, df_pago_raw):
         pdatas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=ontem,label_visibility="collapsed",key="pub_datas")
         d_ini,d_fim=(pdatas if isinstance(pdatas,tuple) and len(pdatas)==2 else (d_ini_def,d_fim_def))
 
-    # Filtrar período
     mask = (df_p["Data"].dt.date >= d_ini) & (df_p["Data"].dt.date <= d_fim)
     df_p = df_p[mask].copy()
 
@@ -290,13 +288,18 @@ def render_publicos(df_raw, df_pago_raw):
         st.warning("Sem dados de públicos no período seleccionado.")
         return
 
-    # Investimento por público (vem do df_pago_raw filtrado por Sub_id4)
-    # Sub_id4 não está no df_pago_raw directamente — vem do df_raw (Resultados Shopee)
-    # Cruzar: para cada público (Sub_id4), somar investimento do df_pago_raw pelo mesmo período/Sub_id1
     publicos = sorted(df_p["Sub_id4"].unique())
     n_dias_periodo = max((d_fim - d_ini).days + 1, 1)
 
-    # Métricas por público
+    # ── FIX BUG 1 ──
+    # Mapear Sub_id4 → Sub_id1s presentes no df_raw (Resultados Shopee)
+    # para poder cruzar com df_pago_raw que só tem Sub_id1
+    pub_to_sid1 = (
+        df_p.groupby("Sub_id4")["Sub_id1"]
+        .apply(lambda x: list(x.dropna().unique()))
+        .to_dict()
+    )
+
     rows = []
     for pub in publicos:
         df_pub = df_p[df_p["Sub_id4"] == pub]
@@ -306,30 +309,23 @@ def render_publicos(df_raw, df_pago_raw):
         ctr       = vendas/cliques if cliques>0 else 0
         ticket    = comissao/vendas if vendas>0 else 0
 
-        # Investimento: df_pago_raw filtrado por Sub_id4 + período
-        # Mesma lógica do pago principal + subcamada Sub_id4
-        invest = 0.0
-        if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
-            mask_inv = (
-                (df_pago_raw["Data"].dt.date >= d_ini) &
-                (df_pago_raw["Data"].dt.date <= d_fim) &
-                (df_pago_raw["Sub_id4"].astype(str).str.strip() == str(pub).strip())
-            )
-            invest = df_pago_raw[mask_inv]["Investimento"].sum()
+        # ── CROSS: usar Sub_id1s deste público para buscar métricas no df_pago_raw ──
+        sid1s_do_pub = pub_to_sid1.get(pub, [])
 
-        # Métricas de campanha do df_pago_raw (impressoes, alcance, cliques_meta)
-        if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
-            mask_camp = (
+        invest = 0.0
+        impressoes = alcance = cliques_meta = 0.0
+
+        if not df_pago_raw.empty and sid1s_do_pub:
+            mask_pago = (
                 (df_pago_raw["Data"].dt.date >= d_ini) &
                 (df_pago_raw["Data"].dt.date <= d_fim) &
-                (df_pago_raw["Sub_id4"] == pub)
+                (df_pago_raw["Sub_id1"].isin(sid1s_do_pub))
             )
-            df_camp = df_pago_raw[mask_camp]
+            df_camp = df_pago_raw[mask_pago]
+            invest       = df_camp["Investimento"].sum()
             impressoes   = df_camp["Impressoes"].sum()
             alcance      = df_camp["Alcance"].sum()
             cliques_meta = df_camp["Cliques_Meta"].sum()
-        else:
-            impressoes = alcance = cliques_meta = 0.0
 
         ctr_meta  = cliques_meta / alcance * 100 if alcance > 0 else 0
         cpm       = invest / impressoes * 1000 if impressoes > 0 else 0
@@ -338,7 +334,7 @@ def render_publicos(df_raw, df_pago_raw):
         lucro     = comissao - invest
         roi       = (comissao - invest) / invest if invest > 0 else None
         cac       = invest / vendas if vendas > 0 else None
-        rpc       = comissao / cliques if cliques > 0 else 0  # receita por clique
+        rpc       = comissao / cliques if cliques > 0 else 0
 
         rows.append({
             "Público":      pub,
@@ -364,7 +360,6 @@ def render_publicos(df_raw, df_pago_raw):
     df_m = pd.DataFrame(rows)
     n_publicos = len(df_m)
 
-    # ── CAMPEÃO ──
     if not df_m.empty and df_m["ROI"].notna().any():
         campeao_idx = df_m[df_m["ROI"].notna()]["ROI"].idxmax()
         campeao = df_m.loc[campeao_idx, "Público"]
@@ -378,7 +373,6 @@ def render_publicos(df_raw, df_pago_raw):
     <span style="color:#f6e8d8;font-size:12px;font-weight:500;">{n_publicos}</span>
     </div>''', unsafe_allow_html=True)
 
-    # ── CAMPEÃO DESTAQUE ──
     if campeao:
         row_c = df_m[df_m["Público"]==campeao].iloc[0]
         roi_c = row_c["ROI"]
@@ -397,7 +391,6 @@ def render_publicos(df_raw, df_pago_raw):
         </div>
         </div>''', unsafe_allow_html=True)
 
-    # ── CARDS POR PÚBLICO ──
     st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Comparação por público</div>', unsafe_allow_html=True)
 
     cols = st.columns(n_publicos)
@@ -446,7 +439,6 @@ def render_publicos(df_raw, df_pago_raw):
     st.markdown('<div style="color:#f6e8d8;font-size:15px;font-weight:500;margin:1.5rem 0 1rem;padding-bottom:8px;border-bottom:1px solid #3a2c28;">Gráficos comparativos</div>', unsafe_allow_html=True)
 
     import plotly.graph_objects as go
-    import plotly.express as px
     THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
                  xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),
                  yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
@@ -455,7 +447,7 @@ def render_publicos(df_raw, df_pago_raw):
     metricas_graf = ["ROI","CAC","CTR","CTR Meta","CPM","CPC","Ticket","Vendas","Comissão","Impressões","Alcance"]
     sel_met = st.selectbox("Métrica para comparar",metricas_graf,key="pub_metrica")
 
-    col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão"}
+    col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","CTR Meta":"CTR Meta","CPM":"CPM","CPC":"CPC","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão","Impressões":"Impressões","Alcance":"Alcance"}
     col_k = col_map[sel_met]
     df_graf = df_m[["Público",col_k]].dropna().copy()
     df_graf[col_k] = pd.to_numeric(df_graf[col_k], errors="coerce")
@@ -469,13 +461,12 @@ def render_publicos(df_raw, df_pago_raw):
     fig.update_layout(title=f"{sel_met} por público",**THEME,height=300,showlegend=False,margin=dict(t=40,b=0,l=0,r=0))
     st.plotly_chart(fig,use_container_width=True)
 
-    # Radar / spider — comparação multi-métrica (normalizado 0-100)
+    # Radar
     st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">Comparação multi-métrica (normalizado)</div>', unsafe_allow_html=True)
     rad_cols = ["ROI","CTR Meta","CPM","CAC","Ticket"]
     df_rad = df_m[["Público"]+rad_cols].dropna()
 
     if len(df_rad) >= 2:
-        # Normalizar cada métrica 0-100 (CAC e CPM: invertidos — menor é melhor)
         inverted_metrics = {"CAC","CPM","CPC"}
         df_norm = df_rad.copy()
         for c in rad_cols:
@@ -543,7 +534,6 @@ def main():
     if not check_login(): return
 
     with st.sidebar:
-        # Navegação de página
         if "pagina" not in st.session_state: st.session_state.pagina="dashboard"
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin-bottom:8px;">NAVEGAÇÃO</div>',unsafe_allow_html=True)
         col_nav1,col_nav2=st.columns(2)
@@ -581,7 +571,6 @@ def main():
     if df_raw.empty:
         st.error("Sem dados na planilha Resultados Shopee."); return
 
-    # ── ROTEADOR DE PÁGINAS ──
     pagina_actual = st.session_state.get("pagina","dashboard")
 
     if pagina_actual == "publicos":
@@ -592,7 +581,7 @@ def main():
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
     hoje=date.today()
     ontem=hoje-timedelta(days=1)
-    ref=ontem  # presets ancorados em ontem — hoje sempre excluído (dados incompletos)
+    ref=ontem
     if "preset" not in st.session_state: st.session_state.preset="all"
     p=st.session_state.get("preset","all")
     if   p=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
@@ -641,11 +630,33 @@ def main():
     if sid3_sel!=sid3_opts: mask=mask&df_raw["Sub_id3"].isin(sid3_sel)
     df=df_raw[mask].copy()
 
-    # Filtrar pago_raw por periodo
+    # ══════════════════════════════════════════════════════════════════════
+    # BUG 2 FIX — Investimento errado ao filtrar Sub_id1 e Sub_id3
+    # PROBLEMA ORIGINAL: df_pago_periodo só filtrava Sub_id1, ignorava Sub_id3.
+    # FIX: aplicar Sub_id3 também no filtro do df_pago_raw, usando os
+    #      Sub_id1s correspondentes às linhas que passaram no filtro Sub_id3
+    #      do df_raw — assim o cruzamento é consistente.
+    # ══════════════════════════════════════════════════════════════════════
     if not df_pago_raw.empty:
         _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
         mp=(df_pago_raw["Data"].dt.date>=_di)&(df_pago_raw["Data"].dt.date<=_df)
-        if sid1_sel!=sid1_opts: mp=mp&df_pago_raw["Sub_id1"].isin(sid1_sel)
+
+        # Se Sub_id1 filtrado → aplicar directamente no pago_raw
+        if sid1_sel!=sid1_opts:
+            mp=mp&df_pago_raw["Sub_id1"].isin(sid1_sel)
+
+        # Se Sub_id3 filtrado → descobrir quais Sub_id1s correspondem
+        # a essas combinações no df_raw e filtrar pago_raw por esses Sub_id1s
+        if sid3_sel!=sid3_opts:
+            sid1s_do_sid3 = (
+                df_raw[
+                    (df_raw["Data"].dt.date>=_di) &
+                    (df_raw["Data"].dt.date<=_df) &
+                    (df_raw["Sub_id3"].isin(sid3_sel))
+                ]["Sub_id1"].unique().tolist()
+            )
+            mp=mp&df_pago_raw["Sub_id1"].isin(sid1s_do_sid3)
+
         df_pago_periodo=df_pago_raw[mp].copy()
     else:
         df_pago_periodo=pd.DataFrame()
@@ -668,7 +679,6 @@ def main():
     _n_dias = (d_fim - d_ini).days + 1
     _datas_esperadas = {d_ini + _dt.timedelta(days=i) for i in range(_n_dias)}
     _gaps = sorted(_datas_esperadas - _todas_datas)
-    # Ignorar dias futuros (hoje em diante) — normal não ter dados ainda
     _hoje = _dt.date.today()
     _gaps = [d for d in _gaps if d < _hoje and d <= ontem]
     if _gaps:
@@ -687,15 +697,12 @@ def main():
         )
 
     # ── CALCULAR METRICAS ──
-    # Investimento: sempre do df_pago_raw (nunca do df merged)
     invest_pago=df_pago_periodo["Investimento"].sum() if not df_pago_periodo.empty else 0.0
     invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
     invest_total=invest_pago+invest_aw
 
-    # Definir periodo anterior (sempre, independente de pago/awareness)
     _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
     _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
-    # Periodo anterior para investimento
     if not df_pago_raw.empty:
         _pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]
         invest_pago_ant=_pago_ant["Investimento"].sum()
@@ -751,7 +758,6 @@ def main():
     m_ant_org   =calcular(df_ant_org)   if not df_ant_org.empty   else None
     m_ant_story =calcular(df_ant_story) if not df_ant_story.empty else None
 
-    # df_daily para sparklines
     df_daily=df.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")).reset_index().sort_values("Data")
     df_daily["Ticket_Medio"]=df_daily.apply(lambda r:r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0,axis=1)
     df_daily["CTR_calc"]=df_daily.apply(lambda r:r["Vendas"]/r["Cliques"]*100 if r["Cliques"]>0 else 0,axis=1)
@@ -774,8 +780,7 @@ def main():
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
-    # lucro_ant = comissao total anterior - investimento total anterior
-    comissao_total_ant=mv.get("comissao",0)  # todas as fontes
+    comissao_total_ant=mv.get("comissao",0)
     lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
     with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"))
@@ -792,27 +797,41 @@ def main():
     with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"))
     with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"))
 
-    # ── CANAIS ──
+    # ══════════════════════════════════════════════════════════════════════
+    # BUG 3 FIX — Performance por Canal sem delta em Cliques, CTR, Ticket
+    # PROBLEMA ORIGINAL: tr() só era chamado para Vendas e Comissão.
+    # FIX: adicionar tr() nos 3 campos em falta, com inverted=True no CTR
+    #      (queda no CTR é negativa) e inverted=False nos outros.
+    # ══════════════════════════════════════════════════════════════════════
     st.markdown('<div class="section-title">📂 Performance por Canal</div>',unsafe_allow_html=True)
     cc1,cc2,cc3=st.columns(3)
     def canal_card(col,mc,ma,nome,emoji):
         with col:
             if mc:
-                def tr(cur,a):
+                def tr(cur,a,inv=False):
                     if not ma or a==0: return ""
-                    pct=(cur-a)/abs(a)*100; c="#7a9e4e" if pct>0 else "#c0392b"; ar="▲" if pct>0 else "▼"
+                    pct=(cur-a)/abs(a)*100
+                    if inv:
+                        c="#c0392b" if pct>0 else "#7a9e4e"; ar="▲" if pct>0 else "▼"
+                    else:
+                        c="#7a9e4e" if pct>0 else "#c0392b"; ar="▲" if pct>0 else "▼"
                     return '<span style="color:{};font-size:10px;">{} {:.1f}%</span>'.format(c,ar,abs(pct))
                 a=ma if ma else {}
                 st.markdown("""<div class="canal-card"><div class="canal-title">{e} {n}</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                 <div><div class="canal-metric">Vendas</div><div class="canal-value">{v}</div>{tv}</div>
                 <div><div class="canal-metric">Comissao</div><div class="canal-value">{c}</div>{tc}</div>
-                <div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}</div></div>
-                <div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div></div>
-                <div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div></div>
-                </div></div>""".format(e=emoji,n=nome,v=fmt_num(mc["vendas"]),tv=tr(mc["vendas"],a.get("vendas",0)),
-                c=fmt_brl(mc["comissao"]),tc=tr(mc["comissao"],a.get("comissao",0)),
-                cl=fmt_num(mc["cliques"]),ctr=fmt_pct(mc["ctr_shopee"]),tm=fmt_brl(mc["ticket"])),unsafe_allow_html=True)
+                <div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}</div>{tcl}</div>
+                <div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div>{tctr}</div>
+                <div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div>{ttm}</div>
+                </div></div>""".format(
+                    e=emoji,n=nome,
+                    v=fmt_num(mc["vendas"]),    tv=tr(mc["vendas"],   a.get("vendas",0)),
+                    c=fmt_brl(mc["comissao"]),  tc=tr(mc["comissao"], a.get("comissao",0)),
+                    cl=fmt_num(mc["cliques"]),  tcl=tr(mc["cliques"], a.get("cliques",0)),
+                    ctr=fmt_pct(mc["ctr_shopee"]), tctr=tr(mc["ctr_shopee"], a.get("ctr_shopee",0)),
+                    tm=fmt_brl(mc["ticket"]),   ttm=tr(mc["ticket"],  a.get("ticket",0)),
+                ),unsafe_allow_html=True)
             else:
                 st.markdown('<div class="canal-card"><div class="canal-title">{} {}</div><div style="color:#8892a4;">Sem dados</div></div>'.format(emoji,nome),unsafe_allow_html=True)
     canal_card(cc1,m_pago,m_ant_pago,"Pago","📣")
@@ -827,7 +846,6 @@ def main():
         cor_roi="green" if roi_camp>1 else ("yellow" if roi_camp>=0 else "red")
         mp=m_ant_pago if m_ant_pago else {}
         n_dias_p=len(df_pago_periodo["Data"].unique()) or 1
-        # Periodo anterior para metricas de campanha
         if not df_pago_raw.empty:
             _a_fim=pd.Timestamp(d_ini).date()-timedelta(days=1)
             _a_ini=_a_fim-timedelta(days=(d_fim-d_ini).days)
@@ -841,7 +859,7 @@ def main():
         vnd_med=m_pago["vendas"]/n_dias_p
         com_med=m_pago["comissao"]/n_dias_p
         inv_med=invest_pago/n_dias_p
-        roi_med=m_pago["roi"]  # mesmo valor, referencia
+        roi_med=m_pago["roi"]
 
         def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
@@ -854,13 +872,12 @@ def main():
                     '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
                     unsafe_allow_html=True)
 
-        # Linha 1: resultados financeiros
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
         n_dias_p_ant=max(len(df_ant_pago["Data"].unique()),1) if not df_ant_pago.empty else 1
         vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant)
         com_med_a=(mp.get("comissao",0)/n_dias_p_ant)
-        inv_med_a=invest_pago_ant/n_dias_p_ant  # usar invest_pago_ant real
+        inv_med_a=invest_pago_ant/n_dias_p_ant
         ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
         ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
         lucro_med=lucro_camp/n_dias_p
@@ -870,16 +887,13 @@ def main():
         lucro_med_ant=(lucro_camp_ant/n_dias_p_ant) if lucro_camp_ant is not None else None
         ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_ant if lucro_med_ant is not None else None),cor_roi)
         ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
-        # ROI com formatacao condicional
         roi_v=m_pago["roi"]
         roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
-        # roi_camp_ant: use comissao from df_ant filtered to pago
         roi_camp_ant=(_pago_comissao_ant-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else None
         ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0,inverted=True),roi_cor)
         with k5:
             st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
 
-        # Linha 2: metricas de campanha
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
         k6,k7,k8,k9=st.columns(4)
         cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0
@@ -892,7 +906,6 @@ def main():
         ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant,inverted=True),"orange")
         ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue")
 
-        # Graficos metricas pago
         if not df_pago_periodo.empty:
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:12px 0 6px 0;">📈 Evolucao Metricas Campanha</div>',unsafe_allow_html=True)
             df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
@@ -960,7 +973,6 @@ def main():
         pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a,inverted=True),"green")
         pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a,inverted=True),"blue")
 
-        # Grafico awareness
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
         df_aw_d["CPM"]=(df_aw_d["Invest"]/df_aw_d["Impressoes"]*1000).replace([np.inf,np.nan],0)
         df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
@@ -974,9 +986,8 @@ def main():
         df_awf=df_aw_d[(df_aw_d[da[am1]]>0)|(df_aw_d[da[am2]]>0)]
         st.plotly_chart(dual_chart(df_awf,"Data",da[am1],da[am2],"{} vs {}".format(am1,am2),am1,am2),use_container_width=True)
 
-        # Correlacao awareness -> vendas
         df_os=df[df["Sub_id2"].isin(["organico","story"])].copy()
-        df_os["Lucro_os"]=df_os["Comissao"]  # custo zero, lucro = comissao
+        df_os["Lucro_os"]=df_os["Comissao"]
         df_os_d=df_os.groupby("Data").agg(Vendas=("Vendas","sum"),Lucro_os=("Lucro_os","sum")).reset_index()
         df_aw_s2=df_aw_d[["Data","Invest"]].copy(); df_aw_s2["Data"]=df_aw_s2["Data"]+pd.Timedelta(days=3)
         df_imp=df_os_d.merge(df_aw_s2.rename(columns={"Invest":"Invest_lag"}),on="Data",how="left").fillna(0)
@@ -1048,7 +1059,6 @@ def main():
     if col_x in df_cross.columns and col_y in df_cross.columns:
         df_cf=df_cross[(df_cross[col_x]>0)|(df_cross[col_y]>0)]
         st.plotly_chart(dual_chart(df_cf,"Data",col_x,col_y,"{} vs {}".format(met1,met2),met1,met2),use_container_width=True)
-
 
     # ── EVOLUCAO ──
     st.markdown('<div id="evolucao" class="section-title">📈 Evolucao Temporal</div>',unsafe_allow_html=True)
@@ -1131,7 +1141,6 @@ def main():
     df_it["Ticket (R$)"]=df_it["Ticket (R$)"].apply(lambda x:"{:.2f}".format(x))
     df_it["Cliques"]=df_it["Cliques"].apply(lambda x:"{:,.0f}".format(x).replace(",","."))
     df_it["Vendas"]=df_it["Vendas"].apply(lambda x:"{:,.0f}".format(x))
-    # Estilo: sub_ids alinhados a esquerda, metricas centradas
     styled = df_it.style.set_properties(
         subset=["Sub_id3","Sub_id1"], **{"text-align":"left"}
     ).set_properties(
@@ -1140,7 +1149,6 @@ def main():
         {"selector":"th","props":[("text-align","center")]}
     ])
     st.dataframe(styled,use_container_width=True,height=300)
-
 
     # ── TABELA ──
     st.markdown('<div class="section-title">📋 Dados Detalhados</div>',unsafe_allow_html=True)
