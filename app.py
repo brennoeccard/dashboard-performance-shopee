@@ -181,6 +181,8 @@ def ler_pago():
     r["Impressoes"]=df.iloc[:,5].apply(parse_num) if df.shape[1]>5 else 0.0
     r["Alcance"]=df.iloc[:,6].apply(parse_num) if df.shape[1]>6 else 0.0
     r["Cliques_Meta"]=df.iloc[:,7].apply(parse_num) if df.shape[1]>7 else 0.0
+    r["Sub_id4"]=df.iloc[:,8].astype(str).str.strip() if df.shape[1]>8 else ""
+    r["Sub_id4"]=r["Sub_id4"].replace("nan","")
     r=r.dropna(subset=["Data"])
     r=r[r["Investimento"]>0]
     return r
@@ -305,35 +307,59 @@ def render_publicos(df_raw, df_pago_raw):
         ctr       = vendas/cliques if cliques>0 else 0
         ticket    = comissao/vendas if vendas>0 else 0
 
-        # Investimento: pago_raw filtrado por Sub_id1 que pertence a este público
-        sub_ids1_pub = df_pub["Sub_id1"].unique()
-        if not df_pago_raw.empty:
+        # Investimento: df_pago_raw filtrado por Sub_id4 + período
+        if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
             mask_inv = (
                 (df_pago_raw["Data"].dt.date >= d_ini) &
                 (df_pago_raw["Data"].dt.date <= d_fim) &
-                (df_pago_raw["Sub_id1"].isin(sub_ids1_pub))
+                (df_pago_raw["Sub_id4"] == pub)
             )
             invest = df_pago_raw[mask_inv]["Investimento"].sum()
         else:
             invest = 0.0
 
-        lucro  = comissao - invest
-        roi    = (comissao - invest) / invest if invest > 0 else None
-        cac    = invest / vendas if vendas > 0 else None
-        rpc    = comissao / cliques if cliques > 0 else 0  # receita por clique
+        # Métricas de campanha do df_pago_raw (impressoes, alcance, cliques_meta)
+        if not df_pago_raw.empty and "Sub_id4" in df_pago_raw.columns:
+            mask_camp = (
+                (df_pago_raw["Data"].dt.date >= d_ini) &
+                (df_pago_raw["Data"].dt.date <= d_fim) &
+                (df_pago_raw["Sub_id4"] == pub)
+            )
+            df_camp = df_pago_raw[mask_camp]
+            impressoes   = df_camp["Impressoes"].sum()
+            alcance      = df_camp["Alcance"].sum()
+            cliques_meta = df_camp["Cliques_Meta"].sum()
+        else:
+            impressoes = alcance = cliques_meta = 0.0
+
+        ctr_meta  = cliques_meta / alcance * 100 if alcance > 0 else 0
+        cpm       = invest / impressoes * 1000 if impressoes > 0 else 0
+        cpc       = invest / cliques_meta if cliques_meta > 0 else 0
+        freq      = impressoes / alcance if alcance > 0 else 0
+        lucro     = comissao - invest
+        roi       = (comissao - invest) / invest if invest > 0 else None
+        cac       = invest / vendas if vendas > 0 else None
+        rpc       = comissao / cliques if cliques > 0 else 0  # receita por clique
 
         rows.append({
-            "Público":   pub,
-            "Vendas":    int(vendas),
-            "Comissão":  round(comissao,2),
+            "Público":      pub,
+            "Vendas":       int(vendas),
+            "Comissão":     round(comissao,2),
             "Investimento": round(invest,2),
-            "Lucro":     round(lucro,2),
-            "ROI":       round(roi,2) if roi is not None else None,
-            "CAC":       round(cac,2) if cac is not None else None,
-            "Cliques":   int(cliques),
-            "CTR":       round(ctr*100,2),
-            "Ticket":    round(ticket,2),
-            "RPC":       round(rpc,2),
+            "Lucro":        round(lucro,2),
+            "ROI":          round(roi,2) if roi is not None else None,
+            "CAC":          round(cac,2) if cac is not None else None,
+            "Cliques":      int(cliques),
+            "CTR":          round(ctr*100,2),
+            "Ticket":       round(ticket,2),
+            "RPC":          round(rpc,2),
+            "Impressões":   int(impressoes),
+            "Alcance":      int(alcance),
+            "Cliques Meta": int(cliques_meta),
+            "CTR Meta":     round(ctr_meta,2),
+            "CPM":          round(cpm,2),
+            "CPC":          round(cpc,2),
+            "Frequência":   round(freq,2),
         })
 
     df_m = pd.DataFrame(rows)
@@ -392,18 +418,29 @@ def render_publicos(df_raw, df_pago_raw):
         trophy     = " 🏆" if eh_campeao else ""
 
         with cols[i]:
+            lucro_cor = "#7a9e4e" if row["Lucro"]>=0 else "#c0392b"
+            cac_txt = f'R${row["CAC"]:.2f}' if row["CAC"] else "N/A"
             st.markdown(f'''<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;padding:14px 16px;border:{border_w} solid {border_col};height:100%;">
             <div style="color:#bd6d34;font-size:13px;font-weight:600;margin-bottom:10px;">{pub}{trophy}</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Vendas</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{row["Vendas"]}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Comissão</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Comissão"]:.0f}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Investimento</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Investimento"]:.0f}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Lucro</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;color:{"#7a9e4e" if row["Lucro"]>=0 else "#c0392b"};">R${row["Lucro"]:.0f}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">ROI</div><div style="color:{cor_roi_card};font-size:17px;font-weight:500;">{roi_txt}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">CAC</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{"R$"+str(row["CAC"]) if row["CAC"] else "N/A"}</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">CTR</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">{row["CTR"]:.2f}%</div></div>
-                <div><div style="color:#c5936d;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Ticket</div><div style="color:#f6e8d8;font-size:17px;font-weight:500;">R${row["Ticket"]:.2f}</div></div>
+            <div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Resultados</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Vendas</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Vendas"]}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Comissão</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Comissão"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Investimento</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["Investimento"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Lucro</div><div style="color:{lucro_cor};font-size:16px;font-weight:500;">R${row["Lucro"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">ROI</div><div style="color:{cor_roi_card};font-size:16px;font-weight:500;">{roi_txt}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CAC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{cac_txt}</div></div>
             </div>
+            <div style="border-top:0.5px solid #3a2c28;padding-top:8px;margin-bottom:6px;">
+            <div style="color:#c5936d;font-size:10px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Campanha</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Impressões</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Impressões"]:,}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Alcance</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Alcance"]:,}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CTR Meta</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["CTR Meta"]:.2f}%</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPM</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPM"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">CPC</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">R${row["CPC"]:.2f}</div></div>
+                <div><div style="color:#c5936d;font-size:9px;text-transform:uppercase;">Frequência</div><div style="color:#f6e8d8;font-size:16px;font-weight:500;">{row["Frequência"]:.2f}x</div></div>
+            </div></div>
             </div>''', unsafe_allow_html=True)
 
     # ── GRÁFICOS COMPARATIVOS ──
@@ -416,7 +453,7 @@ def render_publicos(df_raw, df_pago_raw):
                  yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
     CORES = ["#bd6d34","#c5936d","#9c5834","#d2b095","#562d1d","#f6e8d8"]
 
-    metricas_graf = ["ROI","CAC","CTR","Ticket","Vendas","Comissão"]
+    metricas_graf = ["ROI","CAC","CTR","CTR Meta","CPM","CPC","Ticket","Vendas","Comissão","Impressões","Alcance"]
     sel_met = st.selectbox("Métrica para comparar",metricas_graf,key="pub_metrica")
 
     col_map = {"ROI":"ROI","CAC":"CAC","CTR":"CTR","Ticket":"Ticket","Vendas":"Vendas","Comissão":"Comissão"}
@@ -434,7 +471,7 @@ def render_publicos(df_raw, df_pago_raw):
 
     # Radar / spider — comparação multi-métrica (normalizado 0-100)
     st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin-bottom:8px;">Comparação multi-métrica (normalizado)</div>', unsafe_allow_html=True)
-    rad_cols = ["ROI","CTR","Ticket","RPC"]
+    rad_cols = ["ROI","CTR Meta","CPM","CAC","Ticket"]
     df_rad = df_m[["Público"]+rad_cols].dropna()
 
     if len(df_rad) >= 2:
