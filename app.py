@@ -637,8 +637,8 @@ def render_radar_shopee():
 
             fmt_val    = lambda v: f"{v:.0f}"
             agg_func   = "mean"
-            y_label    = "Score IPA"
-            nota_pesos = "Score IPA: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5% · Anti-outlier: ≥2 semanas com dados"
+            y_label    = "Score IPA*"
+            nota_pesos = "Métrica exclusiva e de propriedade Matiq"
 
         elif met_dh == "Vendas":
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
