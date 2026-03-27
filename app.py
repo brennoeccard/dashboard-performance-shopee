@@ -224,6 +224,13 @@ def ler_horario():
     df["HoraDia"]=df["HoraDia"].astype(str).str.replace("h","").pipe(pd.to_numeric,errors="coerce")
     for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","DiaSemana","Status"]:
         if col in df.columns: df[col]=df[col].fillna("").str.strip()
+    # Regra story: Sub_id1 vazio → story (mesma lógica do atualizar_planilha.py)
+    if "Sub_id1" in df.columns:
+        df["Sub_id1"]=df["Sub_id1"].replace("","story")
+    if "Sub_id2" in df.columns:
+        df["Sub_id2"]=df.apply(
+            lambda r: "story" if r.get("Sub_id1","")=="story" and r.get("Sub_id2","")=="" else r.get("Sub_id2",""),
+            axis=1)
     return df
 
 @st.cache_data(ttl=300)
@@ -246,6 +253,13 @@ def ler_categoria():
     if "Qtd" in df.columns: df["Qtd"]=pd.to_numeric(df["Qtd"],errors="coerce").fillna(0)
     for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","Cat_L1","Cat_L2","Cat_L3","Produto","Status"]:
         if col in df.columns: df[col]=df[col].fillna("").str.strip()
+    # Regra story: Sub_id1 vazio → story (mesma lógica do atualizar_planilha.py)
+    if "Sub_id1" in df.columns:
+        df["Sub_id1"]=df["Sub_id1"].replace("","story")
+    if "Sub_id2" in df.columns:
+        df["Sub_id2"]=df.apply(
+            lambda r: "story" if r.get("Sub_id1","")=="story" and r.get("Sub_id2","")=="" else r.get("Sub_id2",""),
+            axis=1)
     return df
 
 def check_login():
@@ -534,12 +548,18 @@ def render_radar_shopee():
         hp = pivot_data.pivot_table(index="DiaSemana", columns="HoraDia", values="Valor", fill_value=0)
         hp = hp.reindex([d for d in ORDEM_DIAS if d in hp.index])
 
-        # heatmap com escala tradicional YlOrRd (amarelo→laranja→vermelho)
+        # heatmap com paleta integrada na paleta do projeto (marrom escuro → bege/laranja)
         fig_heat = go.Figure(go.Heatmap(
             z=hp.values,
             x=[f"{int(h):02d}h" for h in hp.columns],
             y=hp.index.tolist(),
-            colorscale="YlOrRd",
+            colorscale=[
+                [0.0,  "#1e1410"],   # fundo dos cards — zero/vazio
+                [0.25, "#3a2c28"],   # marrom médio
+                [0.5,  "#9c5834"],   # laranja escuro
+                [0.75, "#bd6d34"],   # laranja principal
+                [1.0,  "#f6e8d8"],   # bege claro — pico máximo
+            ],
             hovertemplate="Dia: %{y}<br>Hora: %{x}<br>Valor: %{z:.1f}<extra></extra>",
         ))
         fig_heat.update_layout(title=f"Heatmap — {met_dh} por Dia × Hora", height=330,
