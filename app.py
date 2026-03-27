@@ -417,9 +417,14 @@ def render_radar_shopee():
     ORDEM_DIAS = ["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"]
     COR        = "#bd6d34"
     CORES      = ["#bd6d34","#c5936d","#9c5834","#d2b095","#7a9e4e","#2980b9","#562d1d"]
-    COR_CANAL  = {"story":"#bd6d34","pago":"#2980b9","organico":"#7a9e4e"}
-    THEME = dict(plot_bgcolor="#0f0d0b",paper_bgcolor="#0f0d0b",font_color="#f6e8d8",
-        xaxis=dict(color="#c5936d",gridcolor="#2a1f1a"),yaxis=dict(color="#c5936d",gridcolor="#2a1f1a"))
+    COR_CANAL  = {"story":"#bd6d34","pago":"#9c5834","organico":"#c5936d"}
+    # THEME sem xaxis/yaxis para evitar conflito ao passar kwargs adicionais
+    THEME_BASE = dict(plot_bgcolor="#0f0d0b", paper_bgcolor="#0f0d0b", font_color="#f6e8d8")
+    AXIS       = dict(color="#c5936d", gridcolor="#2a1f1a")
+    THEME      = dict(**THEME_BASE, xaxis=AXIS, yaxis=AXIS)
+    LEG        = dict(font=dict(color="#f6e8d8", size=11), bgcolor="rgba(30,18,16,0.8)")
+    # canais na ordem preferida
+    CANAIS_ORD = ["story", "pago", "organico"]
 
     # ── helpers ──────────────────────────────────────────────────────
     def sec(titulo):
@@ -529,19 +534,19 @@ def render_radar_shopee():
         hp = pivot_data.pivot_table(index="DiaSemana", columns="HoraDia", values="Valor", fill_value=0)
         hp = hp.reindex([d for d in ORDEM_DIAS if d in hp.index])
 
-        # heatmap com escala de contraste alto
+        # heatmap com escala tradicional YlOrRd (amarelo→laranja→vermelho)
         fig_heat = go.Figure(go.Heatmap(
             z=hp.values,
             x=[f"{int(h):02d}h" for h in hp.columns],
             y=hp.index.tolist(),
-            colorscale=[[0,"#0f0d0b"],[0.3,"#2a1f1a"],[0.6,"#9c5834"],[0.8,"#bd6d34"],[1.0,"#f6e8d8"]],
+            colorscale="YlOrRd",
             hovertemplate="Dia: %{y}<br>Hora: %{x}<br>Valor: %{z:.1f}<extra></extra>",
         ))
         fig_heat.update_layout(title=f"Heatmap — {met_dh} por Dia × Hora", height=330,
             margin=dict(t=40,b=0,l=0,r=0),
-            plot_bgcolor="#0f0d0b", paper_bgcolor="#0f0d0b", font_color="#f6e8d8",
-            xaxis=dict(color="#c5936d", tickfont=dict(size=10)),
-            yaxis=dict(color="#c5936d", tickfont=dict(size=11)))
+            **THEME_BASE,
+            xaxis=dict(**AXIS, tickfont=dict(size=10)),
+            yaxis=dict(**AXIS, tickfont=dict(size=11)))
         st.plotly_chart(fig_heat, use_container_width=True)
 
         # campeões
@@ -569,13 +574,13 @@ def render_radar_shopee():
                 fig_d = go.Figure(go.Bar(x=dt["Dia"], y=dt["Valor"], marker_color=cor_b,
                     text=dt["Valor"].apply(lambda v: f"{v:.0f}" if met_dh in ["Vendas","Cliques"] else fmt_brl(v) if "R$" in met_dh else f"{v:.1f}%"),
                     textposition="outside", textfont=dict(size=10, color="#c5936d")))
-                fig_d.update_layout(title="Por Dia da Semana", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME)
+                fig_d.update_layout(title="Por Dia da Semana", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                 st.plotly_chart(fig_d, use_container_width=True)
             with h2:
                 ht = best_hora_tot.reset_index(); ht.columns = ["Hora","Valor"]; ht = ht.sort_values("Hora")
                 cor_h = [COR if int(h) == melhor_hora_g else "#2a1f1a" for h in ht["Hora"]]
                 fig_h = go.Figure(go.Bar(x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"], marker_color=cor_h))
-                fig_h.update_layout(title="Por Hora do Dia", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME)
+                fig_h.update_layout(title="Por Hora do Dia", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                 st.plotly_chart(fig_h, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -606,30 +611,39 @@ def render_radar_shopee():
 
         cp = cp[cp["Sub_id2"] != ""].sort_values("Valor", ascending=True)
         campeao_canal = cp["Sub_id2"].iloc[-1] if not cp.empty else ""
-        cor_cp = [COR_CANAL.get(c, COR) if c == campeao_canal else "#2a1f1a" for c in cp["Sub_id2"]]
+        cor_cp = [COR_CANAL.get(c, COR) for c in cp["Sub_id2"]]
 
         fig_cp = go.Figure(go.Bar(
             x=cp["Valor"], y=cp["Sub_id2"], orientation="h", marker_color=cor_cp,
             text=cp["Valor"].apply(lambda v: f"{v:.0f}" if met_canal in ["Vendas","Cliques"] else fmt_brl(v) if "R$" in met_canal else f"{v:.1f}%"),
             textposition="outside", textfont=dict(color="#c5936d", size=11)))
         fig_cp.update_layout(title=f"{met_canal} por Canal", height=max(200, len(cp)*50),
-            margin=dict(t=36,b=0,l=0,r=70), showlegend=False, **THEME)
+            margin=dict(t=36,b=0,l=0,r=70), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
         st.plotly_chart(fig_cp, use_container_width=True)
 
         # ── latência — cards visuais ──────────────────────────────────
         st.markdown('<div style="color:#c5936d;font-size:13px;font-weight:600;margin:20px 0 10px;">⏱️ Latência clique → compra por Canal</div>', unsafe_allow_html=True)
 
         lat_df = dh[dh["Latencia_h"].notna() & (dh["Latencia_h"] >= 0)].copy()
+
+        # ordem fixa de canais: story, pago, organico + outros
+        canais_disp_lat = [c for c in CANAIS_ORD if c in dh["Sub_id2"].unique()] + \
+                          [c for c in dh["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
+
         if not lat_df.empty:
             # cards de latência média + mediana por canal
             lat_grp = lat_df.groupby("Sub_id2")["Latencia_h"].agg(Media="mean", Mediana="median").reset_index()
-            lat_grp = lat_grp[lat_grp["Sub_id2"] != ""].sort_values("Media")
+            lat_grp = lat_grp[lat_grp["Sub_id2"] != ""]
+            # reordenar por CANAIS_ORD
+            lat_grp["_ord"] = lat_grp["Sub_id2"].apply(lambda c: CANAIS_ORD.index(c) if c in CANAIS_ORD else 99)
+            lat_grp = lat_grp.sort_values("_ord").drop(columns="_ord")
 
-            cols_lat = st.columns(len(lat_grp))
-            for i, row in lat_grp.iterrows():
+            cols_lat = st.columns(max(len(lat_grp), 1))
+            for idx2, row in lat_grp.iterrows():
                 canal_n = row["Sub_id2"]
                 cor_c   = COR_CANAL.get(canal_n, COR)
-                with cols_lat[list(lat_grp.index).index(i)]:
+                col_idx = list(lat_grp.index).index(idx2)
+                with cols_lat[col_idx]:
                     st.markdown(
                         f'<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;'
                         f'padding:14px 16px;border-left:4px solid {cor_c};margin-bottom:8px;">'
@@ -649,12 +663,8 @@ def render_radar_shopee():
             COR_F2 = "#d4a017"   # 1-6h — amarelo
             COR_F3 = "#c0392b"   # >6h  — vermelho
 
-            canais_ord = ["story","pago","organico"]
-            canais_ord = [c for c in canais_ord if c in lat_df["Sub_id2"].unique()] + \
-                         [c for c in lat_df["Sub_id2"].unique() if c not in canais_ord and c != ""]
-
             rows_urg = []
-            for canal_n in canais_ord:
+            for canal_n in canais_disp_lat:
                 sub = lat_df[lat_df["Sub_id2"] == canal_n]["Latencia_h"]
                 if len(sub) == 0: continue
                 f1 = (sub < 1).sum()  / len(sub) * 100
@@ -691,7 +701,7 @@ def render_radar_shopee():
 
             # ── histograma de latência ────────────────────────────────
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:18px 0 8px;">Distribuição de Latência por Canal (histograma)</div>', unsafe_allow_html=True)
-            canal_hist = st.selectbox("Canal", canais_ord, key="rs_hist_canal")
+            canal_hist = st.selectbox("Canal", canais_disp_lat, key="rs_hist_canal")
             df_hist = lat_df[lat_df["Sub_id2"] == canal_hist]["Latencia_h"].clip(upper=72)
             cor_hist = COR_CANAL.get(canal_hist, COR)
             fig_hist = go.Figure(go.Histogram(x=df_hist, nbinsx=30, marker_color=cor_hist, opacity=0.85,
@@ -701,7 +711,7 @@ def render_radar_shopee():
             fig_hist.add_vline(x=df_hist.median(), line_dash="dot",  line_color="#c5936d",
                 annotation_text=f"Mediana: {df_hist.median():.1f}h", annotation_font_color="#c5936d")
             fig_hist.update_layout(title=f"Distribuição de Latência — {canal_hist} (cap. 72h)",
-                height=280, margin=dict(t=36,b=0,l=0,r=0), **THEME,
+                height=280, margin=dict(t=36,b=0,l=0,r=0), **THEME_BASE, xaxis=AXIS, yaxis=AXIS,
                 xaxis_title="Latência (h)", yaxis_title="Nº Pedidos")
             st.plotly_chart(fig_hist, use_container_width=True)
 
@@ -710,15 +720,17 @@ def render_radar_shopee():
         cd = dh[dh["Sub_id2"] != ""].groupby(["Sub_id2","DiaSemana"])["ID_Pedido"].nunique().reset_index(name="Vendas")
         cd["DiaSemana"] = pd.Categorical(cd["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         cd = cd.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
+        # usar ordem fixa de canais para incluir story
+        canais_graf = [c for c in CANAIS_ORD if c in cd["Sub_id2"].unique()] + \
+                      [c for c in cd["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
         fig_cd = go.Figure()
-        for canal_n in canais_ord:
+        for canal_n in canais_graf:
             sub = cd[cd["Sub_id2"] == canal_n]
             if sub.empty: continue
             fig_cd.add_trace(go.Scatter(x=sub["DiaSemana"], y=sub["Vendas"], mode="lines+markers",
                 name=canal_n, line=dict(color=COR_CANAL.get(canal_n, COR), width=2), marker=dict(size=7)))
         fig_cd.update_layout(title="Vendas por Canal × Dia da Semana", height=300,
-            margin=dict(t=36,b=0,l=0,r=0), **THEME,
-            legend=dict(font=dict(color="#f6e8d8", size=11), bgcolor="rgba(30,18,16,0.8)"))
+            margin=dict(t=36,b=0,l=0,r=0), **THEME_BASE, xaxis=AXIS, yaxis=AXIS, legend=LEG)
         st.plotly_chart(fig_cd, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -768,7 +780,8 @@ def render_radar_shopee():
             text=cat_perf["Valor"].apply(lambda v: f"{v:.0f}" if met_cat in ["Vendas","Cliques"] else fmt_brl(v) if "R$" in met_cat else f"{v:.1f}%"),
             textposition="outside", textfont=dict(color="#c5936d", size=10)))
         fig_cat.update_layout(title=f"{met_cat} por Categoria ({nivel_cat})",
-            height=max(300, len(cat_perf)*36), margin=dict(t=36,b=0,l=0,r=90), showlegend=False, **THEME)
+            height=max(300, len(cat_perf)*36), margin=dict(t=36,b=0,l=0,r=90), showlegend=False,
+            **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
         st.plotly_chart(fig_cat, use_container_width=True)
 
         # ── sazonalidade ──────────────────────────────────────────────
@@ -808,7 +821,8 @@ def render_radar_shopee():
                         text=df_s["Comissao_item"].apply(fmt_brl),
                         textposition="outside", textfont=dict(color="#c5936d", size=10)))
                     fig_s.update_layout(title=f"Comissão por Dia — {cat_sel}",
-                        height=260, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME)
+                        height=260, margin=dict(t=36,b=0,l=0,r=0), showlegend=False,
+                        **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                     st.plotly_chart(fig_s, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -859,9 +873,8 @@ def render_radar_shopee():
                             ticksuffix="%", range=[0,105]),
                 xaxis=dict(tickangle=-45, color="#c5936d", gridcolor="#2a1f1a"),
                 yaxis=dict(color="#c5936d", gridcolor="#2a1f1a"),
-                plot_bgcolor="#0f0d0b", paper_bgcolor="#0f0d0b", font_color="#f6e8d8",
-                legend=dict(font=dict(color="#f6e8d8", size=10), bgcolor="rgba(30,18,16,0.8)"),
-                barmode="overlay")
+                **THEME_BASE,
+                legend=LEG, barmode="overlay")
             st.plotly_chart(fig_pe, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -910,10 +923,7 @@ def render_radar_shopee():
             ).round(1)
             df_ipv_v = df_ipv_v.sort_values("IPV", ascending=False).reset_index(drop=True)
 
-            # já são produtos de entrada?
-            sub3_existentes = set(dc["Sub_id3"].unique())
-            df_ipv_v["Já é entrada"] = df_ipv_v["Produto"].apply(
-                lambda p: "✅" if any(p.lower()[:15] in str(s).lower() for s in sub3_existentes) else "—")
+            # já são produtos de entrada? — removido (nomes não coincidem)
 
             # top 5 campeões em cards
             top5 = df_ipv_v.head(5)
@@ -923,13 +933,12 @@ def render_radar_shopee():
                 with cols_ipv[i]:
                     st.markdown(
                         f'<div style="background:linear-gradient(135deg,#1e1410,#221a16);border-radius:12px;'
-                        f'padding:12px 14px;border-left:4px solid {cor_ipv};min-height:140px;">'
+                        f'padding:12px 14px;border-left:4px solid {cor_ipv};min-height:130px;">'
                         f'<div style="color:{cor_ipv};font-size:18px;font-weight:700;">IPV {row["IPV"]:.0f}</div>'
                         f'<div style="color:#f6e8d8;font-size:11px;font-weight:600;margin:6px 0;line-height:1.3;">{row["Produto"][:50]}</div>'
                         f'<div style="color:#c5936d;font-size:10px;">'
                         f'Ticket: {fmt_brl(row["Ticket"])} · {int(row["Pedidos"])} ped.<br>'
-                        f'{int(row["N_canais"])} canal(is) · {int(row["N_sub3"])} entrada(s)<br>'
-                        f'Já é entrada: {row["Já é entrada"]}'
+                        f'{int(row["N_canais"])} canal(is) · {int(row["N_sub3"])} entrada(s)'
                         f'</div></div>',
                         unsafe_allow_html=True)
 
@@ -952,9 +961,10 @@ def render_radar_shopee():
                 title="Top 15 Produtos por IPV",
                 height=max(300, len(top15)*38),
                 margin=dict(t=36,b=0,l=0,r=50),
-                showlegend=False, **THEME,
-                xaxis=dict(range=[0, 115], color="#c5936d", gridcolor="#2a1f1a"),
-                yaxis=dict(color="#c5936d", gridcolor="#2a1f1a"))
+                showlegend=False,
+                **THEME_BASE,
+                xaxis=dict(range=[0, 115], **AXIS),
+                yaxis=AXIS)
             st.plotly_chart(fig_ipv, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
