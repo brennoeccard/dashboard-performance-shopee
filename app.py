@@ -527,49 +527,138 @@ def render_radar_shopee():
 
         # ── calcular pivot_data ───────────────────────────────────────
         if met_dh == "🏅 Score IPA":
-            def norm_pivot(s):
+            def norm_s(s):
                 mn, mx = s.min(), s.max()
                 if mx > mn: return (s - mn) / (mx - mn) * 100
-                return pd.Series([50.0] * len(s), index=s.index)
-            grp = ["DiaSemana","HoraDia"]
-            p_vnd = dh.groupby(grp)["ID_Pedido"].nunique().reset_index(name="Vendas")
-            p_com = dh_com.groupby(grp)["Comissao_ped"].sum().reset_index(name="Comissao")
-            p_tkt = dh_com.groupby(grp)["Comissao_ped"].mean().reset_index(name="Ticket")
-            p_clk = dh.groupby(grp)["ID_Pedido"].count().reset_index(name="Cliques")
-            dh_urg = dh.copy(); dh_urg["Urgente"] = (dh_urg["Latencia_h"] < 1).astype(float)
-            p_urg_num = dh_urg.groupby(grp)["Urgente"].sum().reset_index(name="Urg_n")
-            p_urg_tot = dh_urg.groupby(grp)["ID_Pedido"].count().reset_index(name="Tot_n")
-            p_urg = p_urg_num.merge(p_urg_tot, on=grp)
-            p_urg["PctUrgente"] = (p_urg["Urg_n"] / p_urg["Tot_n"].replace(0, np.nan) * 100).fillna(0)
-            score_df = p_vnd.merge(p_com, on=grp, how="outer").merge(p_tkt, on=grp, how="outer") \
-                            .merge(p_clk, on=grp, how="outer").merge(p_urg[grp+["PctUrgente"]], on=grp, how="outer").fillna(0)
-            score_df["Score"] = (
-                norm_pivot(score_df["Vendas"])     * 0.25 +
-                norm_pivot(score_df["Comissao"])   * 0.25 +
-                norm_pivot(score_df["Ticket"])     * 0.25 +
-                norm_pivot(score_df["Cliques"])    * 0.125 +
-                norm_pivot(score_df["PctUrgente"]) * 0.125
+                return pd.Series([50.0]*len(s), index=s.index)
+
+            # ── enriquecer dh_com com data do pedido para contar semanas ──
+            if "Hora_Pedido" in dh_com.columns:
+                dh_com["_semana"] = dh_com["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
+                                    dh_com["Hora_Pedido"].dt.year.astype(str)
+            else:
+                dh_com["_semana"] = "s1"  # fallback — não filtra
+
+            # ── Score por DIA (todos os pedidos daquele dia agregados) ──
+            dia_grp = dh_com.groupby("DiaSemana", dropna=False)
+
+            dia_vnd  = dia_grp["ID_Pedido"].nunique()
+            dia_com  = dia_grp["Comissao_ped"].sum()
+            dia_tkt  = dia_grp["Comissao_ped"].mean()
+            dia_clk  = dia_grp["ID_Pedido"].count()
+            dia_urg  = dh_com.assign(Urg=(dh_com["Latencia_h"]<1).astype(float)) \
+                             .groupby("DiaSemana")["Urg"].mean() * 100
+            dia_sem  = dh_com.groupby("DiaSemana")["_semana"].nunique()  # nº semanas distintas
+
+            dia_df = pd.DataFrame({
+                "Vendas":    dia_vnd,
+                "Comissao":  dia_com,
+                "Ticket":    dia_tkt,
+                "Cliques":   dia_clk,
+                "PctUrgente":dia_urg,
+                "N_semanas": dia_sem,
+            }).fillna(0)
+
+            # filtro anti-outlier: mínimo 2 semanas distintas com dados
+            dia_df_f = dia_df[dia_df["N_semanas"] >= 2].copy()
+            if dia_df_f.empty: dia_df_f = dia_df.copy()  # fallback se dados insuficientes
+
+            dia_df_f["Score"] = (
+                norm_s(dia_df_f["Vendas"])     * 0.25 +
+                norm_s(dia_df_f["Comissao"])   * 0.25 +
+                norm_s(dia_df_f["Ticket"])     * 0.25 +
+                norm_s(dia_df_f["Cliques"])    * 0.125 +
+                norm_s(dia_df_f["PctUrgente"]) * 0.125
             ).round(1)
-            pivot_data = score_df[grp + ["Score"]].rename(columns={"Score":"Valor"})
-            fmt_val = lambda v: f"{v:.0f}"
-            agg_func = "mean"; y_label = "Score IPA (médio)"
-            nota_pesos = "O Score IPA é uma métrica exclusiva Matiq"
+
+            # ── Score por HORA (todos os pedidos daquela hora agregados) ──
+            hora_grp = dh_com.groupby("HoraDia", dropna=False)
+
+            hora_vnd = hora_grp["ID_Pedido"].nunique()
+            hora_com = hora_grp["Comissao_ped"].sum()
+            hora_tkt = hora_grp["Comissao_ped"].mean()
+            hora_clk = hora_grp["ID_Pedido"].count()
+            hora_urg = dh_com.assign(Urg=(dh_com["Latencia_h"]<1).astype(float)) \
+                             .groupby("HoraDia")["Urg"].mean() * 100
+            hora_sem = dh_com.groupby("HoraDia")["_semana"].nunique()
+
+            hora_df = pd.DataFrame({
+                "Vendas":    hora_vnd,
+                "Comissao":  hora_com,
+                "Ticket":    hora_tkt,
+                "Cliques":   hora_clk,
+                "PctUrgente":hora_urg,
+                "N_semanas": hora_sem,
+            }).fillna(0)
+
+            # filtro anti-outlier: percentil 10 de volume (remove horas com pouquíssimos dados)
+            p10_vol = hora_df["Vendas"].quantile(0.10)
+            hora_df_f = hora_df[hora_df["Vendas"] >= max(p10_vol, 1)].copy()
+            # + filtro semanas
+            hora_df_f2 = hora_df_f[hora_df_f["N_semanas"] >= 2].copy()
+            if hora_df_f2.empty: hora_df_f2 = hora_df_f.copy()
+
+            hora_df_f2["Score"] = (
+                norm_s(hora_df_f2["Vendas"])     * 0.25 +
+                norm_s(hora_df_f2["Comissao"])   * 0.25 +
+                norm_s(hora_df_f2["Ticket"])     * 0.25 +
+                norm_s(hora_df_f2["Cliques"])    * 0.125 +
+                norm_s(hora_df_f2["PctUrgente"]) * 0.125
+            ).round(1)
+
+            # ── Melhor Momento: Dia × Hora com mais vendas reais ──────
+            # (dados brutos, filtrado pelo percentil 10 de células)
+            grp = ["DiaSemana","HoraDia"]
+            mom_df = dh_com.groupby(grp, dropna=False).agg(
+                Vendas     =("ID_Pedido",    "nunique"),
+                Comissao   =("Comissao_ped", "sum"),
+                Ticket     =("Comissao_ped", "mean"),
+                N_semanas  =("_semana",      "nunique"),
+            ).reset_index().fillna(0)
+
+            # filtro anti-outlier células: ≥2 semanas E acima do percentil 10 de vendas
+            p10_mom = mom_df["Vendas"].quantile(0.10)
+            mom_df_f = mom_df[(mom_df["N_semanas"] >= 2) & (mom_df["Vendas"] >= max(p10_mom,1))].copy()
+            if mom_df_f.empty: mom_df_f = mom_df.copy()
+
+            mom_df_f["Score"] = (
+                norm_s(mom_df_f["Vendas"])   * 0.25 +
+                norm_s(mom_df_f["Comissao"]) * 0.25 +
+                norm_s(mom_df_f["Ticket"])   * 0.25 +
+                norm_s(mom_df_f["Vendas"])   * 0.125 +  # cliques proxy
+                pd.Series([50.0]*len(mom_df_f), index=mom_df_f.index) * 0.125
+            ).round(1)
+
+            # pivot_data para os momentos (usado pelos top3_mom)
+            pivot_data = mom_df_f[grp + ["Score"]].rename(columns={"Score":"Valor"})
+            # guardar scores por dia e hora para os gráficos de barras
+            _score_dia  = dia_df_f["Score"]
+            _score_hora = hora_df_f2["Score"]
+
+            fmt_val    = lambda v: f"{v:.0f}"
+            agg_func   = "mean"
+            y_label    = "Score IPA"
+            nota_pesos = "Score IPA: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5% · Anti-outlier: ≥2 semanas com dados"
 
         elif met_dh == "Vendas":
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
             fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Vendas"; nota_pesos = ""
+            _score_dia = None; _score_hora = None
 
         elif met_dh == "Comissão (R$)":
             pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
             fmt_val = lambda v: fmt_brl(v); agg_func = "sum"; y_label = "Comissão (R$)"; nota_pesos = ""
+            _score_dia = None; _score_hora = None
 
         elif met_dh == "Ticket Médio (R$)":
             pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].mean().reset_index(name="Valor")
             fmt_val = lambda v: fmt_brl(v); agg_func = "mean"; y_label = "Ticket Médio (R$)"; nota_pesos = ""
+            _score_dia = None; _score_hora = None
 
         else:  # Cliques
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
             fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Cliques"; nota_pesos = ""
+            _score_dia = None; _score_hora = None
 
         pivot_data["DiaSemana"] = pd.Categorical(pivot_data["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         pivot_data = pivot_data.dropna(subset=["DiaSemana","HoraDia"]).sort_values(["DiaSemana","HoraDia"])
@@ -578,8 +667,17 @@ def render_radar_shopee():
             st.markdown(f'<div style="color:#c5936d;font-size:11px;margin-bottom:12px;">ℹ️ {nota_pesos}</div>', unsafe_allow_html=True)
 
         if not pivot_data.empty and pivot_data["Valor"].sum() > 0:
-            best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].agg(agg_func).reindex(ORDEM_DIAS).dropna()
-            best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].agg(agg_func)
+
+            # Para o Score IPA, dias e horas usam os scores directos (calculados por Dia/Hora)
+            # Para outras métricas, agregar pivot_data normalmente
+            if met_dh == "🏅 Score IPA" and _score_dia is not None:
+                best_dia_agg  = _score_dia.reindex(ORDEM_DIAS).dropna()
+                best_hora_agg = _score_hora
+                sub_label     = "score"
+            else:
+                best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].agg(agg_func).reindex(ORDEM_DIAS).dropna()
+                best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].agg(agg_func)
+                sub_label     = "média" if agg_func == "mean" else "total"
 
             top3_mom   = pivot_data.nlargest(3, "Valor").reset_index(drop=True)
             top3_dias  = best_dia_agg.nlargest(3)
@@ -614,7 +712,6 @@ def render_radar_shopee():
                 st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📅 Top 3 Dias</div>', unsafe_allow_html=True)
                 for i, (dia, val_d) in enumerate(top3_dias.items()):
                     t = TONS[i]
-                    sub_label = "média" if agg_func == "mean" else "total"
                     st.markdown(
                         f'<div style="background:{t["fundo"]};border-radius:10px;padding:12px 14px;'
                         f'border-left:3px solid {t["borda"]};margin-bottom:6px;">'
@@ -628,7 +725,6 @@ def render_radar_shopee():
                 st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🕐 Top 3 Horas</div>', unsafe_allow_html=True)
                 for i, (hora, val_h) in enumerate(top3_horas.items()):
                     t = TONS[i]
-                    sub_label = "média" if agg_func == "mean" else "total"
                     st.markdown(
                         f'<div style="background:{t["fundo"]};border-radius:10px;padding:12px 14px;'
                         f'border-left:3px solid {t["borda"]};margin-bottom:6px;">'
