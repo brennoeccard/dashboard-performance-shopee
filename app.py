@@ -271,8 +271,8 @@ def check_login():
         with c2:
             st.markdown("<br><br>",unsafe_allow_html=True)
             st.markdown("""<div style='text-align:center;padding:24px;background:linear-gradient(135deg,#1a1210,#221a16);border-radius:16px;border:1px solid #3a2c28;'>
-            <div style='font-size:48px;'>🔓</div><h2 style='color:#f6e8d8;'>DESTRAVA</h2>
-            <p style='color:#bd6d34;'>por Carol Matos · Analytics</p></div>""",unsafe_allow_html=True)
+            <div style='font-size:48px;'>🔓</div><h2 style='color:#f6e8d8;'>MATIQ</h2>
+            <p style='color:#bd6d34;'> Analytics</p></div>""",unsafe_allow_html=True)
             with st.form("login_form"):
                 u=st.text_input("Utilizador"); p=st.text_input("Password",type="password")
                 if st.form_submit_button("Entrar",use_container_width=True):
