@@ -553,7 +553,6 @@ def render_radar_shopee():
             pivot_data = score_df[grp + ["Score"]].rename(columns={"Score":"Valor"})
             fmt_val = lambda v: f"{v:.0f}"
             agg_func = "mean"; y_label = "Score IPA (médio)"
-            nota_pesos = "Pesos: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5%"
 
         elif met_dh == "Vendas":
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
