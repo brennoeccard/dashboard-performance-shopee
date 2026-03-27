@@ -458,7 +458,7 @@ def render_radar_shopee():
 
     # ── HEADER ────────────────────────────────────────────────────────
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📡 Radar Shopee</h1>'
-                '<p style="color:#c5936d;margin:0 0 20px;font-size:13px;">Destrava · por Carol Matos · Análise profunda de comportamento</p>',
+                '<p style="color:#c5936d;margin:0 0 20px;font-size:13px;">Data Matiq · Análise profunda de comportamento</p>',
                 unsafe_allow_html=True)
 
     # ── DADOS ─────────────────────────────────────────────────────────
