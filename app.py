@@ -1277,7 +1277,7 @@ def main():
         render_radar_shopee()
         return
 
-    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📊 Dashboard de Performance</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
+    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📊 Dashboard de Performance</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Data Matiq</p>',unsafe_allow_html=True)
 
     with st.spinner("A carregar dados..."):
         df_raw=ler_dados(); df_pago_raw=ler_pago(); df_aw_raw=ler_awareness()
