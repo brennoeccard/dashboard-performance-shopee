@@ -520,45 +520,29 @@ def render_radar_shopee():
         met_dh = st.radio("Métrica", ["🏅 Score IPA","Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                           horizontal=True, key="rs_dh_met", label_visibility="collapsed")
 
-        # ── merge com comissão (usado em várias métricas) ─────────────
+        # ── merge com comissão ────────────────────────────────────────
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
         dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
 
-        # ── construir pivot_data ──────────────────────────────────────
+        # ── calcular pivot_data ───────────────────────────────────────
         if met_dh == "🏅 Score IPA":
-            # Calcular cada componente por célula Dia × Hora
             def norm_pivot(s):
-                """Normaliza série 0-100 ignorando zeros."""
                 mn, mx = s.min(), s.max()
                 if mx > mn: return (s - mn) / (mx - mn) * 100
                 return pd.Series([50.0] * len(s), index=s.index)
-
             grp = ["DiaSemana","HoraDia"]
-
-            # Vendas
             p_vnd = dh.groupby(grp)["ID_Pedido"].nunique().reset_index(name="Vendas")
-            # Comissão
             p_com = dh_com.groupby(grp)["Comissao_ped"].sum().reset_index(name="Comissao")
-            # Ticket Médio
             p_tkt = dh_com.groupby(grp)["Comissao_ped"].mean().reset_index(name="Ticket")
-            # Cliques (contagem de pedidos com clique registado)
             p_clk = dh.groupby(grp)["ID_Pedido"].count().reset_index(name="Cliques")
-            # % Urgente
-            dh_urg = dh.copy()
-            dh_urg["Urgente"] = (dh_urg["Latencia_h"] < 1).astype(float)
+            dh_urg = dh.copy(); dh_urg["Urgente"] = (dh_urg["Latencia_h"] < 1).astype(float)
             p_urg_num = dh_urg.groupby(grp)["Urgente"].sum().reset_index(name="Urg_n")
             p_urg_tot = dh_urg.groupby(grp)["ID_Pedido"].count().reset_index(name="Tot_n")
             p_urg = p_urg_num.merge(p_urg_tot, on=grp)
             p_urg["PctUrgente"] = (p_urg["Urg_n"] / p_urg["Tot_n"].replace(0, np.nan) * 100).fillna(0)
-
-            # Juntar tudo
-            score_df = p_vnd.merge(p_com, on=grp, how="outer") \
-                            .merge(p_tkt, on=grp, how="outer") \
-                            .merge(p_clk, on=grp, how="outer") \
-                            .merge(p_urg[grp + ["PctUrgente"]], on=grp, how="outer").fillna(0)
-
-            # Normalizar e aplicar pesos
+            score_df = p_vnd.merge(p_com, on=grp, how="outer").merge(p_tkt, on=grp, how="outer") \
+                            .merge(p_clk, on=grp, how="outer").merge(p_urg[grp+["PctUrgente"]], on=grp, how="outer").fillna(0)
             score_df["Score"] = (
                 norm_pivot(score_df["Vendas"])     * 0.25 +
                 norm_pivot(score_df["Comissao"])   * 0.25 +
@@ -566,159 +550,123 @@ def render_radar_shopee():
                 norm_pivot(score_df["Cliques"])    * 0.125 +
                 norm_pivot(score_df["PctUrgente"]) * 0.125
             ).round(1)
-
             pivot_data = score_df[grp + ["Score"]].rename(columns={"Score":"Valor"})
-            titulo_heat = "Heatmap — Score IPA por Dia × Hora"
             fmt_val = lambda v: f"{v:.0f}"
+            agg_func = "mean"; y_label = "Score IPA (médio)"
+            nota_pesos = "Pesos: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5%"
 
         elif met_dh == "Vendas":
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
-            titulo_heat = "Heatmap — Vendas por Dia × Hora"
-            fmt_val = lambda v: f"{v:.0f}"
+            fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Vendas"; nota_pesos = ""
 
         elif met_dh == "Comissão (R$)":
             pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
-            titulo_heat = "Heatmap — Comissão por Dia × Hora"
-            fmt_val = lambda v: fmt_brl(v)
+            fmt_val = lambda v: fmt_brl(v); agg_func = "sum"; y_label = "Comissão (R$)"; nota_pesos = ""
 
         elif met_dh == "Ticket Médio (R$)":
             pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].mean().reset_index(name="Valor")
-            titulo_heat = "Heatmap — Ticket Médio por Dia × Hora"
-            fmt_val = lambda v: fmt_brl(v)
+            fmt_val = lambda v: fmt_brl(v); agg_func = "mean"; y_label = "Ticket Médio (R$)"; nota_pesos = ""
 
         else:  # Cliques
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
-            titulo_heat = "Heatmap — Cliques por Dia × Hora"
-            fmt_val = lambda v: f"{v:.0f}"
+            fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Cliques"; nota_pesos = ""
 
         pivot_data["DiaSemana"] = pd.Categorical(pivot_data["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         pivot_data = pivot_data.dropna(subset=["DiaSemana","HoraDia"]).sort_values(["DiaSemana","HoraDia"])
-        hp = pivot_data.pivot_table(index="DiaSemana", columns="HoraDia", values="Valor", fill_value=0)
-        hp = hp.reindex([d for d in ORDEM_DIAS if d in hp.index])
 
-        # heatmap com paleta integrada na paleta do projeto (marrom escuro → bege/laranja)
-        fig_heat = go.Figure(go.Heatmap(
-            z=hp.values,
-            x=[f"{int(h):02d}h" for h in hp.columns],
-            y=hp.index.tolist(),
-            colorscale=[
-                [0.0,  "#1e1410"],
-                [0.25, "#3a2c28"],
-                [0.5,  "#9c5834"],
-                [0.75, "#bd6d34"],
-                [1.0,  "#f6e8d8"],
-            ],
-            hovertemplate="Dia: %{y}<br>Hora: %{x}<br>Valor: %{z:.1f}<extra></extra>",
-        ))
-        # nota de pesos para o Score IPA
-        if met_dh == "🏅 Score IPA":
-            fig_heat.add_annotation(
-                text="Pesos: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5%",
-                xref="paper", yref="paper", x=0, y=-0.12,
-                showarrow=False, font=dict(color="#c5936d", size=10), align="left")
-        fig_heat.update_layout(title=titulo_heat, height=350,
-            margin=dict(t=40,b=40,l=0,r=0),
-            **THEME_BASE,
-            xaxis=dict(**AXIS, tickfont=dict(size=10)),
-            yaxis=dict(**AXIS, tickfont=dict(size=11)))
-        st.plotly_chart(fig_heat, use_container_width=True)
+        if nota_pesos:
+            st.markdown(f'<div style="color:#c5936d;font-size:11px;margin-bottom:12px;">ℹ️ {nota_pesos}</div>', unsafe_allow_html=True)
 
-        # ── top 3 momentos, dias, horas ──────────────────────────────
         if not pivot_data.empty and pivot_data["Valor"].sum() > 0:
-
-            # Para Score IPA: usar MÉDIA por dia/hora (não soma)
-            # Para outras métricas: usar soma (volume total)
-            if met_dh == "🏅 Score IPA":
-                agg_func = "mean"
-                y_label  = "Score IPA (médio)"
-            else:
-                agg_func = "sum"
-                y_label  = met_dh
-
             best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].agg(agg_func).reindex(ORDEM_DIAS).dropna()
             best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].agg(agg_func)
 
-            # Top 3 momentos (célula Dia × Hora)
-            top3_mom = pivot_data.nlargest(3, "Valor")
-            # Top 3 dias
-            top3_dias = best_dia_agg.nlargest(3)
-            # Top 3 horas
+            top3_mom   = pivot_data.nlargest(3, "Valor").reset_index(drop=True)
+            top3_dias  = best_dia_agg.nlargest(3)
             top3_horas = best_hora_agg.nlargest(3)
 
-            # cards top 3 — linha de momentos
-            st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;">🏆 Top 3 Melhores Momentos</div>', unsafe_allow_html=True)
-            cols_mom = st.columns(3)
+            # tonalidades para #1, #2, #3
+            TONS = [
+                {"borda":"#f6e8d8","fundo":"linear-gradient(135deg,#2a2018,#2e2416)","valor":"#f6e8d8","label":"#bd6d34"},  # ouro
+                {"borda":"#bd6d34","fundo":"linear-gradient(135deg,#221a14,#261e18)","valor":"#bd6d34","label":"#c5936d"},  # prata/laranja
+                {"borda":"#9c5834","fundo":"linear-gradient(135deg,#1e1410,#221a16)","valor":"#9c5834","label":"#c5936d"},  # bronze
+            ]
             medalhas = ["🥇","🥈","🥉"]
-            for idx_m, (_, row_m) in enumerate(top3_mom.iterrows()):
-                with cols_mom[idx_m]:
-                    st.markdown(kpi(
-                        f"{medalhas[idx_m]} #{idx_m+1} Momento",
-                        f"{row_m['DiaSemana']} {int(row_m['HoraDia']):02d}h",
-                        f"{met_dh}: {fmt_val(row_m['Valor'])}"
-                    ), unsafe_allow_html=True)
 
-            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+            # ── 3 colunas: Momentos | Dias | Horas ───────────────────
+            col_mom, col_dias, col_horas = st.columns(3)
 
-            # Top 3 dias e horas lado a lado
-            col_d, col_h = st.columns(2)
-            with col_d:
-                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📅 Top 3 Dias</div>', unsafe_allow_html=True)
-                for idx_d, (dia, val_d) in enumerate(top3_dias.items()):
-                    st.markdown(kpi(
-                        f"{medalhas[idx_d]} {dia}",
-                        fmt_val(val_d),
-                        "média do score" if met_dh == "🏅 Score IPA" else "total"
-                    ), unsafe_allow_html=True)
-                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            with col_mom:
+                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🏆 Top 3 Momentos</div>', unsafe_allow_html=True)
+                for i, row_m in top3_mom.iterrows():
+                    t = TONS[i]
+                    st.markdown(
+                        f'<div style="background:{t["fundo"]};border-radius:10px;padding:12px 14px;'
+                        f'border-left:3px solid {t["borda"]};margin-bottom:6px;">'
+                        f'<div style="color:{t["label"]};font-size:10px;font-weight:700;text-transform:uppercase;">{medalhas[i]} #{i+1}</div>'
+                        f'<div style="color:{t["valor"]};font-size:18px;font-weight:700;margin:3px 0;">'
+                        f'{row_m["DiaSemana"]} {int(row_m["HoraDia"]):02d}h</div>'
+                        f'<div style="color:#c5936d;font-size:10px;">{y_label}: {fmt_val(row_m["Valor"])}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True)
 
-            with col_h:
-                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">🕐 Top 3 Horas</div>', unsafe_allow_html=True)
-                for idx_h, (hora, val_h) in enumerate(top3_horas.items()):
-                    st.markdown(kpi(
-                        f"{medalhas[idx_h]} {int(hora):02d}h",
-                        fmt_val(val_h),
-                        "média do score" if met_dh == "🏅 Score IPA" else "total"
-                    ), unsafe_allow_html=True)
-                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            with col_dias:
+                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">📅 Top 3 Dias</div>', unsafe_allow_html=True)
+                for i, (dia, val_d) in enumerate(top3_dias.items()):
+                    t = TONS[i]
+                    sub_label = "média" if agg_func == "mean" else "total"
+                    st.markdown(
+                        f'<div style="background:{t["fundo"]};border-radius:10px;padding:12px 14px;'
+                        f'border-left:3px solid {t["borda"]};margin-bottom:6px;">'
+                        f'<div style="color:{t["label"]};font-size:10px;font-weight:700;text-transform:uppercase;">{medalhas[i]} #{i+1}</div>'
+                        f'<div style="color:{t["valor"]};font-size:18px;font-weight:700;margin:3px 0;">{dia}</div>'
+                        f'<div style="color:#c5936d;font-size:10px;">{y_label} ({sub_label}): {fmt_val(val_d)}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True)
 
-            # ── gráficos de barras com agg correto ───────────────────
+            with col_horas:
+                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">🕐 Top 3 Horas</div>', unsafe_allow_html=True)
+                for i, (hora, val_h) in enumerate(top3_horas.items()):
+                    t = TONS[i]
+                    sub_label = "média" if agg_func == "mean" else "total"
+                    st.markdown(
+                        f'<div style="background:{t["fundo"]};border-radius:10px;padding:12px 14px;'
+                        f'border-left:3px solid {t["borda"]};margin-bottom:6px;">'
+                        f'<div style="color:{t["label"]};font-size:10px;font-weight:700;text-transform:uppercase;">{medalhas[i]} #{i+1}</div>'
+                        f'<div style="color:{t["valor"]};font-size:18px;font-weight:700;margin:3px 0;">{int(hora):02d}h</div>'
+                        f'<div style="color:#c5936d;font-size:10px;">{y_label} ({sub_label}): {fmt_val(val_h)}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True)
+
+            # ── gráficos de barras: cor única + campeão laranja ───────
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             h1, h2 = st.columns(2)
+
             with h1:
                 dt = best_dia_agg.reset_index(); dt.columns = ["Dia","Valor"]
-                top3_dias_names = list(top3_dias.index)
-                cor_b = ["#f6e8d8" if d == top3_dias_names[0] else
-                         COR       if d == top3_dias_names[1] else
-                         "#9c5834" if d in top3_dias_names    else "#2a1f1a"
-                         for d in dt["Dia"]]
+                campeao_dia = list(top3_dias.index)[0]
+                cor_b = [COR if d == campeao_dia else "#3a2c28" for d in dt["Dia"]]
                 fig_d = go.Figure(go.Bar(x=dt["Dia"], y=dt["Valor"], marker_color=cor_b,
                     text=dt["Valor"].apply(fmt_val),
                     textposition="outside", textfont=dict(size=10, color="#c5936d")))
-                fig_d.update_layout(
-                    title=f"Por Dia da Semana ({y_label})",
-                    yaxis_title=y_label,
-                    height=280, margin=dict(t=36,b=0,l=0,r=0),
-                    showlegend=False, **THEME_BASE, xaxis=AXIS,
-                    yaxis=dict(**AXIS, range=[0, dt["Valor"].max()*1.2] if dt["Valor"].max() > 0 else [0,100]))
+                fig_d.update_layout(title=f"Por Dia da Semana ({y_label})", height=280,
+                    margin=dict(t=36,b=0,l=0,r=0), showlegend=False,
+                    **THEME_BASE, xaxis=AXIS,
+                    yaxis=dict(**AXIS, range=[0, dt["Valor"].max()*1.25] if dt["Valor"].max() > 0 else [0,100]))
                 st.plotly_chart(fig_d, use_container_width=True)
 
             with h2:
                 ht = best_hora_agg.reset_index(); ht.columns = ["Hora","Valor"]; ht = ht.sort_values("Hora")
-                top3_horas_vals = list(top3_horas.index)
-                cor_h = ["#f6e8d8" if int(h) == top3_horas_vals[0] else
-                         COR       if int(h) == top3_horas_vals[1] else
-                         "#9c5834" if int(h) in top3_horas_vals    else "#2a1f1a"
-                         for h in ht["Hora"]]
+                campeao_hora = list(top3_horas.index)[0]
+                cor_h = [COR if int(h) == campeao_hora else "#3a2c28" for h in ht["Hora"]]
                 fig_h = go.Figure(go.Bar(
                     x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"],
                     marker_color=cor_h, text=ht["Valor"].apply(fmt_val),
                     textposition="outside", textfont=dict(size=9, color="#c5936d")))
-                fig_h.update_layout(
-                    title=f"Por Hora do Dia ({y_label})",
-                    yaxis_title=y_label,
-                    height=280, margin=dict(t=36,b=0,l=0,r=0),
-                    showlegend=False, **THEME_BASE, xaxis=AXIS,
-                    yaxis=dict(**AXIS, range=[0, ht["Valor"].max()*1.2] if ht["Valor"].max() > 0 else [0,100]))
+                fig_h.update_layout(title=f"Por Hora do Dia ({y_label})", height=280,
+                    margin=dict(t=36,b=0,l=0,r=0), showlegend=False,
+                    **THEME_BASE, xaxis=AXIS,
+                    yaxis=dict(**AXIS, range=[0, ht["Valor"].max()*1.25] if ht["Valor"].max() > 0 else [0,100]))
                 st.plotly_chart(fig_h, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -852,6 +800,9 @@ def render_radar_shopee():
         cd = dh[dh["Sub_id2"] != ""].groupby(["Sub_id2","DiaSemana"])["ID_Pedido"].nunique().reset_index(name="Vendas")
         cd["DiaSemana"] = pd.Categorical(cd["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         cd = cd.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
+        # ordem fixa para incluir story — definida aqui, fora de qualquer bloco condicional
+        canais_graf = [c for c in CANAIS_ORD if c in cd["Sub_id2"].unique()] + \
+                      [c for c in cd["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
         COR_CANAL_LINHA = {"story":"#f6e8d8","pago":"#bd6d34","organico":"#7a9e4e"}
         fig_cd = go.Figure()
         for canal_n in canais_graf:
