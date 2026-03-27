@@ -623,40 +623,102 @@ def render_radar_shopee():
             yaxis=dict(**AXIS, tickfont=dict(size=11)))
         st.plotly_chart(fig_heat, use_container_width=True)
 
-        # campeões
+        # ── top 3 momentos, dias, horas ──────────────────────────────
         if not pivot_data.empty and pivot_data["Valor"].sum() > 0:
-            idx_max        = pivot_data["Valor"].idxmax()
-            melhor_dia     = pivot_data.loc[idx_max, "DiaSemana"]
-            melhor_h       = int(pivot_data.loc[idx_max, "HoraDia"])
-            melhor_val     = pivot_data.loc[idx_max, "Valor"]
-            val_fmt        = fmt_val(melhor_val)
-            best_dia_tot   = pivot_data.groupby("DiaSemana")["Valor"].sum().reindex(ORDEM_DIAS).dropna()
-            melhor_dia_g   = best_dia_tot.idxmax() if not best_dia_tot.empty else "—"
-            best_hora_tot  = pivot_data.groupby("HoraDia")["Valor"].sum()
-            melhor_hora_g  = int(best_hora_tot.idxmax()) if not best_hora_tot.empty else 0
 
-            c1,c2,c3 = st.columns(3)
-            c1.markdown(kpi("🏆 Melhor Momento", f"{melhor_dia} {melhor_h:02d}h", f"{met_dh}: {val_fmt}"), unsafe_allow_html=True)
-            c2.markdown(kpi("📅 Melhor Dia",     melhor_dia_g), unsafe_allow_html=True)
-            c3.markdown(kpi("🕐 Melhor Hora",    f"{melhor_hora_g:02d}h"), unsafe_allow_html=True)
+            # Para Score IPA: usar MÉDIA por dia/hora (não soma)
+            # Para outras métricas: usar soma (volume total)
+            if met_dh == "🏅 Score IPA":
+                agg_func = "mean"
+                y_label  = "Score IPA (médio)"
+            else:
+                agg_func = "sum"
+                y_label  = met_dh
 
+            best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].agg(agg_func).reindex(ORDEM_DIAS).dropna()
+            best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].agg(agg_func)
+
+            # Top 3 momentos (célula Dia × Hora)
+            top3_mom = pivot_data.nlargest(3, "Valor")
+            # Top 3 dias
+            top3_dias = best_dia_agg.nlargest(3)
+            # Top 3 horas
+            top3_horas = best_hora_agg.nlargest(3)
+
+            # cards top 3 — linha de momentos
+            st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;">🏆 Top 3 Melhores Momentos</div>', unsafe_allow_html=True)
+            cols_mom = st.columns(3)
+            medalhas = ["🥇","🥈","🥉"]
+            for idx_m, (_, row_m) in enumerate(top3_mom.iterrows()):
+                with cols_mom[idx_m]:
+                    st.markdown(kpi(
+                        f"{medalhas[idx_m]} #{idx_m+1} Momento",
+                        f"{row_m['DiaSemana']} {int(row_m['HoraDia']):02d}h",
+                        f"{met_dh}: {fmt_val(row_m['Valor'])}"
+                    ), unsafe_allow_html=True)
+
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+            # Top 3 dias e horas lado a lado
+            col_d, col_h = st.columns(2)
+            with col_d:
+                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📅 Top 3 Dias</div>', unsafe_allow_html=True)
+                for idx_d, (dia, val_d) in enumerate(top3_dias.items()):
+                    st.markdown(kpi(
+                        f"{medalhas[idx_d]} {dia}",
+                        fmt_val(val_d),
+                        "média do score" if met_dh == "🏅 Score IPA" else "total"
+                    ), unsafe_allow_html=True)
+                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+            with col_h:
+                st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">🕐 Top 3 Horas</div>', unsafe_allow_html=True)
+                for idx_h, (hora, val_h) in enumerate(top3_horas.items()):
+                    st.markdown(kpi(
+                        f"{medalhas[idx_h]} {int(hora):02d}h",
+                        fmt_val(val_h),
+                        "média do score" if met_dh == "🏅 Score IPA" else "total"
+                    ), unsafe_allow_html=True)
+                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+            # ── gráficos de barras com agg correto ───────────────────
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             h1, h2 = st.columns(2)
             with h1:
-                dt = best_dia_tot.reset_index(); dt.columns = ["Dia","Valor"]
-                cor_b = [COR if d == melhor_dia_g else "#2a1f1a" for d in dt["Dia"]]
+                dt = best_dia_agg.reset_index(); dt.columns = ["Dia","Valor"]
+                top3_dias_names = list(top3_dias.index)
+                cor_b = ["#f6e8d8" if d == top3_dias_names[0] else
+                         COR       if d == top3_dias_names[1] else
+                         "#9c5834" if d in top3_dias_names    else "#2a1f1a"
+                         for d in dt["Dia"]]
                 fig_d = go.Figure(go.Bar(x=dt["Dia"], y=dt["Valor"], marker_color=cor_b,
                     text=dt["Valor"].apply(fmt_val),
                     textposition="outside", textfont=dict(size=10, color="#c5936d")))
-                fig_d.update_layout(title="Por Dia da Semana", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
+                fig_d.update_layout(
+                    title=f"Por Dia da Semana ({y_label})",
+                    yaxis_title=y_label,
+                    height=280, margin=dict(t=36,b=0,l=0,r=0),
+                    showlegend=False, **THEME_BASE, xaxis=AXIS,
+                    yaxis=dict(**AXIS, range=[0, dt["Valor"].max()*1.2] if dt["Valor"].max() > 0 else [0,100]))
                 st.plotly_chart(fig_d, use_container_width=True)
+
             with h2:
-                ht = best_hora_tot.reset_index(); ht.columns = ["Hora","Valor"]; ht = ht.sort_values("Hora")
-                cor_h = [COR if int(h) == melhor_hora_g else "#2a1f1a" for h in ht["Hora"]]
-                fig_h = go.Figure(go.Bar(x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"],
+                ht = best_hora_agg.reset_index(); ht.columns = ["Hora","Valor"]; ht = ht.sort_values("Hora")
+                top3_horas_vals = list(top3_horas.index)
+                cor_h = ["#f6e8d8" if int(h) == top3_horas_vals[0] else
+                         COR       if int(h) == top3_horas_vals[1] else
+                         "#9c5834" if int(h) in top3_horas_vals    else "#2a1f1a"
+                         for h in ht["Hora"]]
+                fig_h = go.Figure(go.Bar(
+                    x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"],
                     marker_color=cor_h, text=ht["Valor"].apply(fmt_val),
                     textposition="outside", textfont=dict(size=9, color="#c5936d")))
-                fig_h.update_layout(title="Por Hora do Dia", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
+                fig_h.update_layout(
+                    title=f"Por Hora do Dia ({y_label})",
+                    yaxis_title=y_label,
+                    height=280, margin=dict(t=36,b=0,l=0,r=0),
+                    showlegend=False, **THEME_BASE, xaxis=AXIS,
+                    yaxis=dict(**AXIS, range=[0, ht["Valor"].max()*1.2] if ht["Valor"].max() > 0 else [0,100]))
                 st.plotly_chart(fig_h, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -666,7 +728,7 @@ def render_radar_shopee():
 
     if not dh.empty:
         # ── performance por canal ─────────────────────────────────────
-        met_canal = st.radio("Métrica", ["Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques","CTR (%)"],
+        met_canal = st.radio("Métrica", ["Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                              horizontal=True, key="rs_canal_met", label_visibility="collapsed")
 
         canais_todos = sorted([c for c in dh["Sub_id2"].unique() if c])
@@ -678,20 +740,14 @@ def render_radar_shopee():
         elif met_canal == "Ticket Médio (R$)":
             tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
             cp  = tmp.groupby("Sub_id2")["Comissao_item"].mean().reset_index(name="Valor")
-        elif met_canal == "Cliques":
+        else:  # Cliques
             cp = dh.groupby("Sub_id2")["ID_Pedido"].count().reset_index(name="Valor")
-        else:
-            tot = dh.groupby("Sub_id2")["ID_Pedido"].nunique()
-            cli = dh.groupby("Sub_id2")["ID_Pedido"].count()
-            cp  = (tot / cli.replace(0, np.nan) * 100).reset_index(name="Valor")
 
         cp = cp[cp["Sub_id2"] != ""].sort_values("Valor", ascending=True)
-        campeao_canal = cp["Sub_id2"].iloc[-1] if not cp.empty else ""
         cor_cp = [COR_CANAL.get(c, COR) for c in cp["Sub_id2"]]
-
         fig_cp = go.Figure(go.Bar(
             x=cp["Valor"], y=cp["Sub_id2"], orientation="h", marker_color=cor_cp,
-            text=cp["Valor"].apply(lambda v: f"{v:.0f}" if met_canal in ["Vendas","Cliques"] else fmt_brl(v) if "R$" in met_canal else f"{v:.1f}%"),
+            text=cp["Valor"].apply(lambda v: f"{v:.0f}" if met_canal in ["Vendas","Cliques"] else fmt_brl(v)),
             textposition="outside", textfont=dict(color="#c5936d", size=11)))
         fig_cp.update_layout(title=f"{met_canal} por Canal", height=max(200, len(cp)*50),
             margin=dict(t=36,b=0,l=0,r=70), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
@@ -796,15 +852,15 @@ def render_radar_shopee():
         cd = dh[dh["Sub_id2"] != ""].groupby(["Sub_id2","DiaSemana"])["ID_Pedido"].nunique().reset_index(name="Vendas")
         cd["DiaSemana"] = pd.Categorical(cd["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         cd = cd.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
-        # usar ordem fixa de canais para incluir story
-        canais_graf = [c for c in CANAIS_ORD if c in cd["Sub_id2"].unique()] + \
-                      [c for c in cd["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
+        COR_CANAL_LINHA = {"story":"#f6e8d8","pago":"#bd6d34","organico":"#7a9e4e"}
         fig_cd = go.Figure()
         for canal_n in canais_graf:
             sub = cd[cd["Sub_id2"] == canal_n]
             if sub.empty: continue
             fig_cd.add_trace(go.Scatter(x=sub["DiaSemana"], y=sub["Vendas"], mode="lines+markers",
-                name=canal_n, line=dict(color=COR_CANAL.get(canal_n, COR), width=2), marker=dict(size=7)))
+                name=canal_n,
+                line=dict(color=COR_CANAL_LINHA.get(canal_n, COR), width=3),
+                marker=dict(size=8, symbol="circle")))
         fig_cd.update_layout(title="Vendas por Canal × Dia da Semana", height=300,
             margin=dict(t=36,b=0,l=0,r=0), **THEME_BASE, xaxis=AXIS, yaxis=AXIS, legend=LEG)
         st.plotly_chart(fig_cd, use_container_width=True)
@@ -907,7 +963,31 @@ def render_radar_shopee():
     sec("🎯 Concentração — Produtos de Entrada (Sub_id3)")
 
     if not dc.empty and "Sub_id3" in dc.columns:
-        pe = dc[dc["Sub_id3"].str.strip() != ""].groupby("Sub_id3").agg(
+        total_dc_pedidos  = dc["ID_Pedido"].nunique()
+        total_dc_comissao = dc["Comissao_item"].sum()
+
+        pe_all = dc.copy()
+        pe_com_sub3 = pe_all[pe_all["Sub_id3"].str.strip() != ""]
+        cobertura_ped = pe_com_sub3["ID_Pedido"].nunique()
+        cobertura_com = pe_com_sub3["Comissao_item"].sum()
+        pct_ped = cobertura_ped / max(total_dc_pedidos,1) * 100
+        pct_com = cobertura_com / max(total_dc_comissao,0.01) * 100
+
+        # aviso de cobertura
+        cor_aviso = "#7a9e4e" if pct_com >= 70 else ("#d4a017" if pct_com >= 40 else "#c0392b")
+        st.markdown(
+            f'<div style="background:#1a1210;border:1px solid {cor_aviso};border-radius:8px;'
+            f'padding:10px 16px;margin-bottom:12px;">'
+            f'<span style="color:{cor_aviso};font-size:12px;font-weight:700;">📊 Cobertura do Sub_id3: </span>'
+            f'<span style="color:#f6e8d8;font-size:12px;">'
+            f'{cobertura_ped} de {total_dc_pedidos} pedidos ({pct_ped:.0f}%) · '
+            f'{fmt_brl(cobertura_com)} de {fmt_brl(total_dc_comissao)} ({pct_com:.0f}% da comissão total)'
+            f'</span>'
+            f'{"" if pct_com >= 70 else "<br><span style=\'color:#c5936d;font-size:11px;\'>Pedidos sem Sub_id3 não aparecem no gráfico — provavelmente vendas antigas antes de implementar o rastreio.</span>"}'
+            f'</div>',
+            unsafe_allow_html=True)
+
+        pe = pe_com_sub3.groupby("Sub_id3").agg(
             Pedidos      = ("ID_Pedido",    "nunique"),
             Comissao     = ("Comissao_item","sum"),
         ).reset_index().sort_values("Comissao", ascending=False).reset_index(drop=True)
@@ -918,15 +998,14 @@ def render_radar_shopee():
             total_pe  = len(pe)
             val_80    = pe.head(n_80)["Comissao"].sum()
 
-            # card resumo
+            # cards resumo
             c1, c2, c3 = st.columns(3)
-            c1.markdown(kpi("Produtos de Entrada", f"{total_pe}",   "total únicos"),             unsafe_allow_html=True)
-            c2.markdown(kpi("Fazem 80% da Comissão", f"{n_80}",     f"de {total_pe} produtos"),  unsafe_allow_html=True)
-            c3.markdown(kpi("Comissão dos Top " + str(n_80), fmt_brl(val_80), "80% do total"),   unsafe_allow_html=True)
+            c1.markdown(kpi("Produtos de Entrada", f"{total_pe}", "com Sub_id3 preenchido"), unsafe_allow_html=True)
+            c2.markdown(kpi("Fazem 80% da Comissão", f"{n_80}", f"de {total_pe} produtos"), unsafe_allow_html=True)
+            c3.markdown(kpi(f"Comissão Top {n_80}", fmt_brl(val_80), f"{pct_com:.0f}% cobertura rastreada"), unsafe_allow_html=True)
 
             st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-            # pareto
             pe_plot = pe.head(min(25, total_pe))
             cor_pe  = [COR if i < n_80 else "#2a1f1a" for i in range(len(pe_plot))]
             fig_pe  = go.Figure()
@@ -943,14 +1022,12 @@ def render_radar_shopee():
                 annotation_text="80%", annotation_font_color="#d4a017",
                 annotation_position="right", yref="y2")
             fig_pe.update_layout(
-                title=f"Pareto — os {n_80} produtos em laranja = 80% da comissão",
+                title=f"Pareto — os {n_80} produtos em laranja = 80% da comissão rastreada",
                 height=320, margin=dict(t=44,b=60,l=0,r=0),
-                yaxis2=dict(overlaying="y", side="right", color="#c5936d",
-                            ticksuffix="%", range=[0,105]),
+                yaxis2=dict(overlaying="y", side="right", color="#c5936d", ticksuffix="%", range=[0,105]),
                 xaxis=dict(tickangle=-45, color="#c5936d", gridcolor="#2a1f1a"),
                 yaxis=dict(color="#c5936d", gridcolor="#2a1f1a"),
-                **THEME_BASE,
-                legend=LEG, barmode="overlay")
+                **THEME_BASE, legend=LEG, barmode="overlay")
             st.plotly_chart(fig_pe, use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -962,7 +1039,7 @@ def render_radar_shopee():
         '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:16px;color:#c5936d;font-size:12px;">'
         'O <b style="color:#f6e8d8;">IPV</b> identifica os <b style="color:#f6e8d8;">produtos finais</b> (o que o cliente realmente comprou) '
         'com maior potencial de virar produto de entrada (Sub_id3) ou campanha paga. '
-        'Score 0–100. Pondera: ticket médio · frequência de aparição · diversidade de canais que o trouxeram · volume de pedidos.'
+        'Score 0–100.'
         '</div>', unsafe_allow_html=True)
 
     if not dc.empty and "Produto" in dc.columns:
