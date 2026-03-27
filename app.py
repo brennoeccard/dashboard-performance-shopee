@@ -517,31 +517,79 @@ def render_radar_shopee():
     sec("📅 Melhor Dia & Hora")
 
     if not dh.empty and "DiaSemana" in dh.columns:
-        met_dh = st.radio("Métrica", ["Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques","CTR (%)"],
+        met_dh = st.radio("Métrica", ["🏅 Score IPA","Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                           horizontal=True, key="rs_dh_met", label_visibility="collapsed")
 
-        # construir pivot_data
-        if met_dh == "Vendas":
+        # ── merge com comissão (usado em várias métricas) ─────────────
+        comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
+        dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
+        dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
+
+        # ── construir pivot_data ──────────────────────────────────────
+        if met_dh == "🏅 Score IPA":
+            # Calcular cada componente por célula Dia × Hora
+            def norm_pivot(s):
+                """Normaliza série 0-100 ignorando zeros."""
+                mn, mx = s.min(), s.max()
+                if mx > mn: return (s - mn) / (mx - mn) * 100
+                return pd.Series([50.0] * len(s), index=s.index)
+
+            grp = ["DiaSemana","HoraDia"]
+
+            # Vendas
+            p_vnd = dh.groupby(grp)["ID_Pedido"].nunique().reset_index(name="Vendas")
+            # Comissão
+            p_com = dh_com.groupby(grp)["Comissao_ped"].sum().reset_index(name="Comissao")
+            # Ticket Médio
+            p_tkt = dh_com.groupby(grp)["Comissao_ped"].mean().reset_index(name="Ticket")
+            # Cliques (contagem de pedidos com clique registado)
+            p_clk = dh.groupby(grp)["ID_Pedido"].count().reset_index(name="Cliques")
+            # % Urgente
+            dh_urg = dh.copy()
+            dh_urg["Urgente"] = (dh_urg["Latencia_h"] < 1).astype(float)
+            p_urg_num = dh_urg.groupby(grp)["Urgente"].sum().reset_index(name="Urg_n")
+            p_urg_tot = dh_urg.groupby(grp)["ID_Pedido"].count().reset_index(name="Tot_n")
+            p_urg = p_urg_num.merge(p_urg_tot, on=grp)
+            p_urg["PctUrgente"] = (p_urg["Urg_n"] / p_urg["Tot_n"].replace(0, np.nan) * 100).fillna(0)
+
+            # Juntar tudo
+            score_df = p_vnd.merge(p_com, on=grp, how="outer") \
+                            .merge(p_tkt, on=grp, how="outer") \
+                            .merge(p_clk, on=grp, how="outer") \
+                            .merge(p_urg[grp + ["PctUrgente"]], on=grp, how="outer").fillna(0)
+
+            # Normalizar e aplicar pesos
+            score_df["Score"] = (
+                norm_pivot(score_df["Vendas"])     * 0.25 +
+                norm_pivot(score_df["Comissao"])   * 0.25 +
+                norm_pivot(score_df["Ticket"])     * 0.25 +
+                norm_pivot(score_df["Cliques"])    * 0.125 +
+                norm_pivot(score_df["PctUrgente"]) * 0.125
+            ).round(1)
+
+            pivot_data = score_df[grp + ["Score"]].rename(columns={"Score":"Valor"})
+            titulo_heat = "Heatmap — Score IPA por Dia × Hora"
+            fmt_val = lambda v: f"{v:.0f}"
+
+        elif met_dh == "Vendas":
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
+            titulo_heat = "Heatmap — Vendas por Dia × Hora"
+            fmt_val = lambda v: f"{v:.0f}"
+
         elif met_dh == "Comissão (R$)":
-            tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
-            pivot_data = tmp.groupby(["DiaSemana","HoraDia"])["Comissao_item"].sum().reset_index(name="Valor")
+            pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
+            titulo_heat = "Heatmap — Comissão por Dia × Hora"
+            fmt_val = lambda v: fmt_brl(v)
+
         elif met_dh == "Ticket Médio (R$)":
-            tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
-            pivot_data = tmp.groupby(["DiaSemana","HoraDia"])["Comissao_item"].mean().reset_index(name="Valor")
-        elif met_dh == "Cliques":
-            # clique = hora do clique que gerou venda
-            if "HoraDia" in dh.columns:
-                clique_hora = dh["Hora_Clique"].dt.hour if "Hora_Clique" in dh.columns else dh["HoraDia"]
-                tmp2 = dh.copy(); tmp2["HoraClique"] = dh["Hora_Clique"].dt.hour if "Hora_Clique" in dh.columns else dh["HoraDia"]
-                pivot_data = tmp2.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
-            else:
-                pivot_data = pd.DataFrame(columns=["DiaSemana","HoraDia","Valor"])
-        else:  # CTR
-            tot  = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique()
-            cli  = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count()
-            ctr  = (tot / cli.replace(0, np.nan) * 100).reset_index(name="Valor")
-            pivot_data = ctr
+            pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].mean().reset_index(name="Valor")
+            titulo_heat = "Heatmap — Ticket Médio por Dia × Hora"
+            fmt_val = lambda v: fmt_brl(v)
+
+        else:  # Cliques
+            pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
+            titulo_heat = "Heatmap — Cliques por Dia × Hora"
+            fmt_val = lambda v: f"{v:.0f}"
 
         pivot_data["DiaSemana"] = pd.Categorical(pivot_data["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         pivot_data = pivot_data.dropna(subset=["DiaSemana","HoraDia"]).sort_values(["DiaSemana","HoraDia"])
@@ -554,16 +602,22 @@ def render_radar_shopee():
             x=[f"{int(h):02d}h" for h in hp.columns],
             y=hp.index.tolist(),
             colorscale=[
-                [0.0,  "#1e1410"],   # fundo dos cards — zero/vazio
-                [0.25, "#3a2c28"],   # marrom médio
-                [0.5,  "#9c5834"],   # laranja escuro
-                [0.75, "#bd6d34"],   # laranja principal
-                [1.0,  "#f6e8d8"],   # bege claro — pico máximo
+                [0.0,  "#1e1410"],
+                [0.25, "#3a2c28"],
+                [0.5,  "#9c5834"],
+                [0.75, "#bd6d34"],
+                [1.0,  "#f6e8d8"],
             ],
             hovertemplate="Dia: %{y}<br>Hora: %{x}<br>Valor: %{z:.1f}<extra></extra>",
         ))
-        fig_heat.update_layout(title=f"Heatmap — {met_dh} por Dia × Hora", height=330,
-            margin=dict(t=40,b=0,l=0,r=0),
+        # nota de pesos para o Score IPA
+        if met_dh == "🏅 Score IPA":
+            fig_heat.add_annotation(
+                text="Pesos: Vendas 25% · Comissão 25% · Ticket 25% · Cliques 12,5% · Urgente 12,5%",
+                xref="paper", yref="paper", x=0, y=-0.12,
+                showarrow=False, font=dict(color="#c5936d", size=10), align="left")
+        fig_heat.update_layout(title=titulo_heat, height=350,
+            margin=dict(t=40,b=40,l=0,r=0),
             **THEME_BASE,
             xaxis=dict(**AXIS, tickfont=dict(size=10)),
             yaxis=dict(**AXIS, tickfont=dict(size=11)))
@@ -575,7 +629,7 @@ def render_radar_shopee():
             melhor_dia     = pivot_data.loc[idx_max, "DiaSemana"]
             melhor_h       = int(pivot_data.loc[idx_max, "HoraDia"])
             melhor_val     = pivot_data.loc[idx_max, "Valor"]
-            val_fmt        = f"{melhor_val:.0f}" if met_dh in ["Vendas","Cliques"] else fmt_brl(melhor_val) if "R$" in met_dh else f"{melhor_val:.1f}%"
+            val_fmt        = fmt_val(melhor_val)
             best_dia_tot   = pivot_data.groupby("DiaSemana")["Valor"].sum().reindex(ORDEM_DIAS).dropna()
             melhor_dia_g   = best_dia_tot.idxmax() if not best_dia_tot.empty else "—"
             best_hora_tot  = pivot_data.groupby("HoraDia")["Valor"].sum()
@@ -592,14 +646,16 @@ def render_radar_shopee():
                 dt = best_dia_tot.reset_index(); dt.columns = ["Dia","Valor"]
                 cor_b = [COR if d == melhor_dia_g else "#2a1f1a" for d in dt["Dia"]]
                 fig_d = go.Figure(go.Bar(x=dt["Dia"], y=dt["Valor"], marker_color=cor_b,
-                    text=dt["Valor"].apply(lambda v: f"{v:.0f}" if met_dh in ["Vendas","Cliques"] else fmt_brl(v) if "R$" in met_dh else f"{v:.1f}%"),
+                    text=dt["Valor"].apply(fmt_val),
                     textposition="outside", textfont=dict(size=10, color="#c5936d")))
                 fig_d.update_layout(title="Por Dia da Semana", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                 st.plotly_chart(fig_d, use_container_width=True)
             with h2:
                 ht = best_hora_tot.reset_index(); ht.columns = ["Hora","Valor"]; ht = ht.sort_values("Hora")
                 cor_h = [COR if int(h) == melhor_hora_g else "#2a1f1a" for h in ht["Hora"]]
-                fig_h = go.Figure(go.Bar(x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"], marker_color=cor_h))
+                fig_h = go.Figure(go.Bar(x=[f"{int(h):02d}h" for h in ht["Hora"]], y=ht["Valor"],
+                    marker_color=cor_h, text=ht["Valor"].apply(fmt_val),
+                    textposition="outside", textfont=dict(size=9, color="#c5936d")))
                 fig_h.update_layout(title="Por Hora do Dia", height=280, margin=dict(t=36,b=0,l=0,r=0), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                 st.plotly_chart(fig_h, use_container_width=True)
 
