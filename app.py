@@ -284,7 +284,7 @@ def check_login():
 
 def render_publicos(df_raw, df_pago_raw):
     from datetime import date, timedelta
-    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Destrava · por Carol Matos</p>',unsafe_allow_html=True)
+    st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">👥 Teste de Públicos</h1><p style="color:#c5936d;margin:0 0 16px 0;font-size:13px;">Matiq</p>',unsafe_allow_html=True)
     if "Sub_id4" not in df_raw.columns:
         df_p = pd.DataFrame()
     else:
@@ -1655,10 +1655,10 @@ def main():
     if busca: df_t=df_t[df_t.apply(lambda r:busca.lower() in str(r).lower(),axis=1)]
     st.dataframe(df_t.style.format({"Comissao":"R$ {:.2f}"}),use_container_width=True,height=400)
     st.caption("{} linhas".format(len(df_t)))
-    html_r="<html><body><h1>Relatorio Destrava</h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
+    html_r="<html><body><h1>Relatorio Matiq </h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
     st.download_button("📥 Download HTML",data=html_r.encode("utf-8"),file_name="relatorio_{}_{}.html".format(d_ini,d_fim),mime="text/html",key="dl_btn")
 
-    st.markdown('<div id="insights-ia" class="section-title">🤖 DESTRAVA AI</div>',unsafe_allow_html=True)
+    st.markdown('<div id="insights-ia" class="section-title">🤖 MATIQ AI</div>',unsafe_allow_html=True)
     st.markdown("""<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;"><div style="background:#1a1210;border:1px solid #bd6d34;border-radius:10px;padding:16px;"><div style="color:#bd6d34;font-size:13px;font-weight:700;margin-bottom:6px;">Campanha Paga</div><div style="color:#c5936d;font-size:12px;">Analise tecnica de CPM, CPC, CAC, frequencia e funil.</div></div><div style="background:#1a1210;border:1px solid #9c5834;border-radius:10px;padding:16px;"><div style="color:#9c5834;font-size:13px;font-weight:700;margin-bottom:6px;">Todos os Canais + Criativos</div><div style="color:#c5936d;font-size:12px;">Comparacao entre canais + sugestao de criativos baseada no IPA.</div></div></div><div style="color:#c5936d;font-size:11px;margin-bottom:12px;">(*) Cada analise ~$0.01 de creditos Anthropic.</div>""",unsafe_allow_html=True)
     if "analise_camp" not in st.session_state: st.session_state.analise_camp=None
     if "analise_geral" not in st.session_state: st.session_state.analise_geral=None
@@ -1698,7 +1698,7 @@ def main():
         if st.button("🗑️ Limpar analises",key="clear_ai"):
             st.session_state.analise_camp=None; st.session_state.analise_geral=None; st.rerun()
 
-    st.markdown('<div class="footer">🔓 <strong style="color:#bd6d34;">DESTRAVA</strong> <span style="color:#c5936d;">por Carol Matos</span></div>',unsafe_allow_html=True)
+    st.markdown('<div class="footer">🔓 <strong style="color:#bd6d34;">MATIQ</strong> <span style="color:#c5936d;">Analytics</span></div>',unsafe_allow_html=True)
 
 if __name__=="__main__":
     main()
