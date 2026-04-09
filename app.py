@@ -1426,7 +1426,7 @@ def main():
         st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:20px 0 8px 0;">🎯 PERFORMANCE POR CRIATIVO — ROI E FUNIL DE CONVERSÃO</div>', unsafe_allow_html=True)
 
         # Thresholds
-        MIN_DIAS  = 3
+        MIN_DIAS           = 3
         MIN_CLIQUES_PAUSAR = 100
 
         df_cri_clicks = df_pago_v.groupby(["Sub_id1","Sub_id3"]).agg(
@@ -1448,93 +1448,93 @@ def main():
         df_cri["Cliques_Meta"] = df_cri["Cliques_Meta"].fillna(0)
         df_cri["N_dias"]       = df_cri["N_dias"].fillna(0).astype(int)
 
+        # Distribuir investimento proporcional por cliques Shopee dentro do sub_id1
         total_cliques_sid1 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
         df_cri["Invest_card"] = df_cri.apply(
             lambda r: r["Investimento"] * (r["Cliques_Shopee"] / total_cliques_sid1[r.name])
             if total_cliques_sid1[r.name] > 0 else 0, axis=1
         )
 
+        # Excluir linhas sem investimento
+        df_cri = df_cri[df_cri["Invest_card"] > 0].copy()
+
         df_cri["ROI"] = df_cri.apply(
             lambda r: (r["Comissao"] - r["Invest_card"]) / r["Invest_card"]
             if r["Invest_card"] > 0 else None, axis=1
         )
-        df_cri["CAC"] = df_cri.apply(
-            lambda r: r["Invest_card"] / r["Vendas"] if r["Vendas"] > 0 else 0, axis=1
-        )
+        df_cri["Receita"]  = df_cri["Comissao"] - df_cri["Invest_card"]
+        df_cri["CAC"]      = df_cri.apply(lambda r: r["Invest_card"] / r["Vendas"] if r["Vendas"] > 0 else 0, axis=1)
+        df_cri["RPC"]      = df_cri.apply(lambda r: r["Comissao"] / r["Cliques_Shopee"] if r["Cliques_Shopee"] > 0 else 0, axis=1)
 
         def badge_decisao_cri(row):
-            roi         = row["ROI"]
-            cliques     = row["Cliques_Shopee"]
-            n_dias      = row["N_dias"]
-            invest_card = row["Invest_card"]
-            if invest_card == 0:
-                return ("\u2014", "#8892a4", "#1a1a2e")
+            roi     = row["ROI"]
+            cliques = row["Cliques_Shopee"]
+            n_dias  = row["N_dias"]
             if n_dias < MIN_DIAS or roi is None:
                 return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
             if roi > 1:
                 return ("\U0001f7e2 Escalar", "#7a9e4e", "#0f1f0f")
-            if roi >= 0.5:
-                return ("\U0001f7e1 Monitorar", "#d4a017", "#1f1a0a")
             if roi >= 0:
-                return ("\U0001f7e0 Otimizar", "#bd6d34", "#1f1208")
+                return ("\U0001f7e1 Monitorar", "#d4a017", "#1f1a0a")
             if cliques >= MIN_CLIQUES_PAUSAR:
                 return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
             return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
 
         df_cri["_badge"] = df_cri.apply(badge_decisao_cri, axis=1)
+        df_cri["_roi_sort"] = df_cri["ROI"].fillna(-999)
+        df_cri = df_cri.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
 
-        df_cri_sorted = df_cri.copy()
-        df_cri_sorted["_roi_sort"] = df_cri_sorted["ROI"].fillna(-999)
-        df_cri_sorted = df_cri_sorted.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
+        # Grid com 11 colunas: Sub_id1 | Sub_id3 | Invest | Cliques | Vendas | Comissão | Receita | ROI | CAC | RPC | Status
+        GRID = "1.6fr 1.4fr 0.9fr 1fr 0.8fr 0.9fr 0.9fr 0.8fr 0.9fr 0.9fr 1.2fr"
 
         header_html = (
-            '<div style="display:grid;grid-template-columns:1.8fr 1.6fr 1fr 1.2fr 1fr 1fr 1fr 1fr 1.3fr;gap:4px;'
+            '<div style="display:grid;grid-template-columns:{g};gap:4px;'
             'padding:7px 12px;background:#221a16;border-radius:6px 6px 0 0;'
-            'color:#c5936d;font-size:11px;font-weight:600;margin-top:8px;">'
+            'color:#c5936d;font-size:11px;font-weight:600;margin-top:8px;">'.format(g=GRID) +
             '<div>Campanha (Sub_id1)</div>'
             '<div>Card (Sub_id3)</div>'
             '<div style="text-align:right">Invest.*</div>'
             '<div style="text-align:right">Cliques</div>'
             '<div style="text-align:right">Vendas</div>'
             '<div style="text-align:right">Comiss\u00e3o</div>'
+            '<div style="text-align:right">Receita</div>'
             '<div style="text-align:right">ROI</div>'
             '<div style="text-align:right">CAC</div>'
+            '<div style="text-align:right">RPC</div>'
             '<div style="text-align:center">Status</div>'
             '</div>'
         )
 
         rows_html = ""
-        prev_sid1 = None
-        for _, row in df_cri_sorted.iterrows():
+        for _, row in df_cri.iterrows():
             badge_txt, badge_cor, badge_bg = row["_badge"]
             roi_val = row["ROI"]
             if roi_val is None:
                 roi_str = "\u2014"; roi_cor = "#8892a4"
             else:
                 roi_str = "{:.2f}\u00d7".format(roi_val)
-                roi_cor = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0.5 else ("#bd6d34" if roi_val >= 0 else "#c0392b"))
-            cac_str    = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
-            invest_str = "R${:.0f}".format(row["Invest_card"])
+                roi_cor = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0 else "#c0392b")
+            receita_val = row["Receita"]
+            receita_cor = "#7a9e4e" if receita_val >= 0 else "#c0392b"
+            cac_str     = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
+            rpc_str     = "R${:.3f}".format(row["RPC"]) if row["RPC"] > 0 else "\u2014"
             cliques_str = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
-            sid1_display = row["Sub_id1"] if row["Sub_id1"] != prev_sid1 else ""
-            prev_sid1    = row["Sub_id1"]
-            bg_row = "#161210" if sid1_display == "" else "#1a1410"
+            sid1 = row["Sub_id1"] if row["Sub_id1"] else "\u2014"
+            sid3 = row["Sub_id3"] if row["Sub_id3"] else "\u2014"
             rows_html += (
-                '<div style="display:grid;grid-template-columns:1.8fr 1.6fr 1fr 1.2fr 1fr 1fr 1fr 1fr 1.3fr;gap:4px;'
-                'padding:8px 12px;border-bottom:1px solid #2a1f1a;background:{bg};'
-                'color:#f6e8d8;font-size:12px;align-items:center;">'.format(bg=bg_row) +
-                '<div style="font-weight:{fw};color:{sc}">{v}</div>'.format(
-                    fw="700" if sid1_display else "400",
-                    sc="#c5936d" if sid1_display else "#6a5a52",
-                    v=sid1_display if sid1_display else "\u21b3"
-                ) +
-                '<div style="color:#f6e8d8;">{}</div>'.format(row["Sub_id3"] if row["Sub_id3"] else "\u2014") +
-                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(invest_str) +
+                '<div style="display:grid;grid-template-columns:{g};gap:4px;'
+                'padding:8px 12px;border-bottom:1px solid #2a1f1a;background:#1a1410;'
+                'color:#f6e8d8;font-size:12px;align-items:center;">'.format(g=GRID) +
+                '<div style="font-weight:600;color:#c5936d;">{}</div>'.format(sid1) +
+                '<div style="color:#f6e8d8;">{}</div>'.format(sid3) +
+                '<div style="text-align:right;color:#c5936d;">R${:.0f}</div>'.format(row["Invest_card"]) +
                 '<div style="text-align:right;">{}</div>'.format(cliques_str) +
                 '<div style="text-align:right;">{}</div>'.format(int(row["Vendas"])) +
                 '<div style="text-align:right;">R${:.0f}</div>'.format(row["Comissao"]) +
+                '<div style="text-align:right;color:{c};font-weight:600;">R${:.0f}</div>'.format(receita_val, c=receita_cor) +
                 '<div style="text-align:right;color:{c};font-weight:700;">{v}</div>'.format(c=roi_cor, v=roi_str) +
                 '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cac_str) +
+                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(rpc_str) +
                 '<div style="text-align:center;">'
                 '<span style="background:{bg};color:{cor};border:1px solid {cor};'
                 'border-radius:12px;padding:2px 9px;font-size:11px;font-weight:600;white-space:nowrap;">'
@@ -1546,11 +1546,10 @@ def main():
             '<div style="padding:8px 12px;background:#161210;border-radius:0 0 6px 6px;'
             'border-top:1px solid #2a1f1a;display:flex;gap:14px;flex-wrap:wrap;">'
             '<span style="color:#7a9e4e;font-size:10px;">\U0001f7e2 Escalar \u2192 ROI &gt; 1</span>'
-            '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0.5\u20131</span>'
-            '<span style="color:#bd6d34;font-size:10px;">\U0001f7e0 Otimizar \u2192 ROI 0\u20130.5</span>'
+            '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0\u20131</span>'
             '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
             '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias de dados</span>'
-            '<span style="color:#c5936d;font-size:10px;margin-left:auto;">* Invest. prop. por cliques Shopee</span>'
+            '<span style="color:#c5936d;font-size:10px;margin-left:auto;">* Invest. prop. por cliques Shopee &nbsp;|&nbsp; Receita = Comiss\u00e3o \u2212 Invest. &nbsp;|&nbsp; RPC = Comiss\u00e3o / Cliques</span>'
             '</div>'
         )
 
