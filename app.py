@@ -224,7 +224,6 @@ def ler_horario():
     df["HoraDia"]=df["HoraDia"].astype(str).str.replace("h","").pipe(pd.to_numeric,errors="coerce")
     for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","DiaSemana","Status"]:
         if col in df.columns: df[col]=df[col].fillna("").str.strip()
-    # Regra story: Sub_id1 vazio → story (mesma lógica do atualizar_planilha.py)
     if "Sub_id1" in df.columns:
         df["Sub_id1"]=df["Sub_id1"].replace("","story")
     if "Sub_id2" in df.columns:
@@ -253,7 +252,6 @@ def ler_categoria():
     if "Qtd" in df.columns: df["Qtd"]=pd.to_numeric(df["Qtd"],errors="coerce").fillna(0)
     for col in ["Sub_id1","Sub_id2","Sub_id3","Sub_id4","Cat_L1","Cat_L2","Cat_L3","Produto","Status"]:
         if col in df.columns: df[col]=df[col].fillna("").str.strip()
-    # Regra story: Sub_id1 vazio → story (mesma lógica do atualizar_planilha.py)
     if "Sub_id1" in df.columns:
         df["Sub_id1"]=df["Sub_id1"].replace("","story")
     if "Sub_id2" in df.columns:
@@ -421,10 +419,6 @@ def render_publicos(df_raw, df_pago_raw):
     st.markdown('<div style="margin-top:2rem;padding:10px 16px;background:#1a1210;border-radius:8px;border:1px solid #3a2c28;color:#c5936d;font-size:11px;">RPC = Receita Por Clique (Comissão / Cliques) — mede a eficiência monetária de cada clique do público.</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════
-#  RADAR SHOPEE
-# ══════════════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════════════
 #  RADAR SHOPEE — v2
 # ══════════════════════════════════════════════════════════════════════
 def render_radar_shopee():
@@ -432,15 +426,12 @@ def render_radar_shopee():
     COR        = "#bd6d34"
     CORES      = ["#bd6d34","#c5936d","#9c5834","#d2b095","#7a9e4e","#2980b9","#562d1d"]
     COR_CANAL  = {"story":"#bd6d34","pago":"#9c5834","organico":"#c5936d"}
-    # THEME sem xaxis/yaxis para evitar conflito ao passar kwargs adicionais
     THEME_BASE = dict(plot_bgcolor="#0f0d0b", paper_bgcolor="#0f0d0b", font_color="#f6e8d8")
     AXIS       = dict(color="#c5936d", gridcolor="#2a1f1a")
     THEME      = dict(**THEME_BASE, xaxis=AXIS, yaxis=AXIS)
     LEG        = dict(font=dict(color="#f6e8d8", size=11), bgcolor="rgba(30,18,16,0.8)")
-    # canais na ordem preferida
     CANAIS_ORD = ["story", "pago", "organico"]
 
-    # ── helpers ──────────────────────────────────────────────────────
     def sec(titulo):
         st.markdown(f'<div style="color:#f6e8d8;font-size:16px;font-weight:600;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid #3a2c28;">{titulo}</div>', unsafe_allow_html=True)
 
@@ -456,12 +447,10 @@ def render_radar_shopee():
         return (f'<div style="height:8px;border-radius:4px;background:#2a1f1a;margin-top:4px;">'
                 f'<div style="height:8px;border-radius:4px;background:{cor};width:{min(pct,100):.0f}%;"></div></div>')
 
-    # ── HEADER ────────────────────────────────────────────────────────
     st.markdown('<h1 style="color:#f6e8d8;margin:0;font-size:28px;">📡 Radar Shopee</h1>'
                 '<p style="color:#c5936d;margin:0 0 20px;font-size:13px;">Data Matiq · Análise profunda de comportamento</p>',
                 unsafe_allow_html=True)
 
-    # ── DADOS ─────────────────────────────────────────────────────────
     with st.spinner("A carregar dados do Radar..."):
         dh = ler_horario()
         dc = ler_categoria()
@@ -474,7 +463,6 @@ def render_radar_shopee():
                     unsafe_allow_html=True)
         return
 
-    # ── FILTROS ───────────────────────────────────────────────────────
     with st.expander("🎛️ Filtros", expanded=True):
         canais_disp   = sorted([x for x in dh["Sub_id2"].unique() if x]) if not dh.empty else []
         status_disp   = sorted([x for x in dh["Status"].unique()  if x]) if not dh.empty else []
@@ -493,7 +481,6 @@ def render_radar_shopee():
     if dh.empty and dc.empty:
         st.warning("Sem dados para os filtros seleccionados."); return
 
-    # ── KPIs RESUMO ───────────────────────────────────────────────────
     sec("💰 Resumo do Período")
     total_pedidos  = dh["ID_Pedido"].nunique() if not dh.empty else 0
     total_comissao = dc["Comissao_item"].sum()  if not dc.empty else 0
@@ -511,44 +498,36 @@ def render_radar_shopee():
     k5.markdown(kpi("Compras Urgentes", f"{pct_urgente:.0f}%", "em menos de 1h"), unsafe_allow_html=True)
     k6.markdown(kpi("Canal Top",        top_canal),                         unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 1 — MELHOR DIA & HORA
-    # ══════════════════════════════════════════════════════════════════
     sec("📅 Melhor Dia & Hora")
 
     if not dh.empty and "DiaSemana" in dh.columns:
         met_dh = st.radio("Métrica", ["🏅 Score IPA","Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                           horizontal=True, key="rs_dh_met", label_visibility="collapsed")
 
-        # ── merge com comissão ────────────────────────────────────────
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
         dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
 
-        # ── calcular pivot_data ───────────────────────────────────────
         if met_dh == "🏅 Score IPA":
             def norm_s(s):
                 mn, mx = s.min(), s.max()
                 if mx > mn: return (s - mn) / (mx - mn) * 100
                 return pd.Series([50.0]*len(s), index=s.index)
 
-            # ── enriquecer dh_com com data do pedido para contar semanas ──
             if "Hora_Pedido" in dh_com.columns:
                 dh_com["_semana"] = dh_com["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
                                     dh_com["Hora_Pedido"].dt.year.astype(str)
             else:
-                dh_com["_semana"] = "s1"  # fallback — não filtra
+                dh_com["_semana"] = "s1"
 
-            # ── Score por DIA (todos os pedidos daquele dia agregados) ──
             dia_grp = dh_com.groupby("DiaSemana", dropna=False)
-
             dia_vnd  = dia_grp["ID_Pedido"].nunique()
             dia_com  = dia_grp["Comissao_ped"].sum()
             dia_tkt  = dia_grp["Comissao_ped"].mean()
             dia_clk  = dia_grp["ID_Pedido"].count()
             dia_urg  = dh_com.assign(Urg=(dh_com["Latencia_h"]<1).astype(float)) \
                              .groupby("DiaSemana")["Urg"].mean() * 100
-            dia_sem  = dh_com.groupby("DiaSemana")["_semana"].nunique()  # nº semanas distintas
+            dia_sem  = dh_com.groupby("DiaSemana")["_semana"].nunique()
 
             dia_df = pd.DataFrame({
                 "Vendas":    dia_vnd,
@@ -559,9 +538,8 @@ def render_radar_shopee():
                 "N_semanas": dia_sem,
             }).fillna(0)
 
-            # filtro anti-outlier: mínimo 2 semanas distintas com dados
             dia_df_f = dia_df[dia_df["N_semanas"] >= 2].copy()
-            if dia_df_f.empty: dia_df_f = dia_df.copy()  # fallback se dados insuficientes
+            if dia_df_f.empty: dia_df_f = dia_df.copy()
 
             dia_df_f["Score"] = (
                 norm_s(dia_df_f["Vendas"])     * 0.25 +
@@ -571,9 +549,7 @@ def render_radar_shopee():
                 norm_s(dia_df_f["PctUrgente"]) * 0.125
             ).round(1)
 
-            # ── Score por HORA (todos os pedidos daquela hora agregados) ──
             hora_grp = dh_com.groupby("HoraDia", dropna=False)
-
             hora_vnd = hora_grp["ID_Pedido"].nunique()
             hora_com = hora_grp["Comissao_ped"].sum()
             hora_tkt = hora_grp["Comissao_ped"].mean()
@@ -591,10 +567,8 @@ def render_radar_shopee():
                 "N_semanas": hora_sem,
             }).fillna(0)
 
-            # filtro anti-outlier: percentil 10 de volume (remove horas com pouquíssimos dados)
             p10_vol = hora_df["Vendas"].quantile(0.10)
             hora_df_f = hora_df[hora_df["Vendas"] >= max(p10_vol, 1)].copy()
-            # + filtro semanas
             hora_df_f2 = hora_df_f[hora_df_f["N_semanas"] >= 2].copy()
             if hora_df_f2.empty: hora_df_f2 = hora_df_f.copy()
 
@@ -606,8 +580,6 @@ def render_radar_shopee():
                 norm_s(hora_df_f2["PctUrgente"]) * 0.125
             ).round(1)
 
-            # ── Melhor Momento: Dia × Hora com mais vendas reais ──────
-            # (dados brutos, filtrado pelo percentil 10 de células)
             grp = ["DiaSemana","HoraDia"]
             mom_df = dh_com.groupby(grp, dropna=False).agg(
                 Vendas     =("ID_Pedido",    "nunique"),
@@ -616,7 +588,6 @@ def render_radar_shopee():
                 N_semanas  =("_semana",      "nunique"),
             ).reset_index().fillna(0)
 
-            # filtro anti-outlier células: ≥2 semanas E acima do percentil 10 de vendas
             p10_mom = mom_df["Vendas"].quantile(0.10)
             mom_df_f = mom_df[(mom_df["N_semanas"] >= 2) & (mom_df["Vendas"] >= max(p10_mom,1))].copy()
             if mom_df_f.empty: mom_df_f = mom_df.copy()
@@ -625,13 +596,11 @@ def render_radar_shopee():
                 norm_s(mom_df_f["Vendas"])   * 0.25 +
                 norm_s(mom_df_f["Comissao"]) * 0.25 +
                 norm_s(mom_df_f["Ticket"])   * 0.25 +
-                norm_s(mom_df_f["Vendas"])   * 0.125 +  # cliques proxy
+                norm_s(mom_df_f["Vendas"])   * 0.125 +
                 pd.Series([50.0]*len(mom_df_f), index=mom_df_f.index) * 0.125
             ).round(1)
 
-            # pivot_data para os momentos (usado pelos top3_mom)
             pivot_data = mom_df_f[grp + ["Score"]].rename(columns={"Score":"Valor"})
-            # guardar scores por dia e hora para os gráficos de barras
             _score_dia  = dia_df_f["Score"]
             _score_hora = hora_df_f2["Score"]
 
@@ -655,7 +624,7 @@ def render_radar_shopee():
             fmt_val = lambda v: fmt_brl(v); agg_func = "mean"; y_label = "Ticket Médio (R$)"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
-        else:  # Cliques
+        else:
             pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
             fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Cliques"; nota_pesos = ""
             _score_dia = None; _score_hora = None
@@ -668,8 +637,6 @@ def render_radar_shopee():
 
         if not pivot_data.empty and pivot_data["Valor"].sum() > 0:
 
-            # Para o Score IPA, dias e horas usam os scores directos (calculados por Dia/Hora)
-            # Para outras métricas, agregar pivot_data normalmente
             if met_dh == "🏅 Score IPA" and _score_dia is not None:
                 best_dia_agg  = _score_dia.reindex(ORDEM_DIAS).dropna()
                 best_hora_agg = _score_hora
@@ -683,15 +650,13 @@ def render_radar_shopee():
             top3_dias  = best_dia_agg.nlargest(3)
             top3_horas = best_hora_agg.nlargest(3)
 
-            # tonalidades para #1, #2, #3
             TONS = [
-                {"borda":"#f6e8d8","fundo":"linear-gradient(135deg,#2a2018,#2e2416)","valor":"#f6e8d8","label":"#bd6d34"},  # ouro
-                {"borda":"#bd6d34","fundo":"linear-gradient(135deg,#221a14,#261e18)","valor":"#bd6d34","label":"#c5936d"},  # prata/laranja
-                {"borda":"#9c5834","fundo":"linear-gradient(135deg,#1e1410,#221a16)","valor":"#9c5834","label":"#c5936d"},  # bronze
+                {"borda":"#f6e8d8","fundo":"linear-gradient(135deg,#2a2018,#2e2416)","valor":"#f6e8d8","label":"#bd6d34"},
+                {"borda":"#bd6d34","fundo":"linear-gradient(135deg,#221a14,#261e18)","valor":"#bd6d34","label":"#c5936d"},
+                {"borda":"#9c5834","fundo":"linear-gradient(135deg,#1e1410,#221a16)","valor":"#9c5834","label":"#c5936d"},
             ]
             medalhas = ["🥇","🥈","🥉"]
 
-            # ── 3 colunas: Momentos | Dias | Horas ───────────────────
             col_mom, col_dias, col_horas = st.columns(3)
 
             with col_mom:
@@ -734,7 +699,6 @@ def render_radar_shopee():
                         f'</div>',
                         unsafe_allow_html=True)
 
-            # ── gráficos de barras: cor única + campeão laranja ───────
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             h1, h2 = st.columns(2)
 
@@ -765,13 +729,9 @@ def render_radar_shopee():
                     yaxis=dict(**AXIS, range=[0, ht["Valor"].max()*1.25] if ht["Valor"].max() > 0 else [0,100]))
                 st.plotly_chart(fig_h, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 2 — CANAL EM PROFUNDIDADE
-    # ══════════════════════════════════════════════════════════════════
     sec("📡 Canal (Sub_id2) em Profundidade")
 
     if not dh.empty:
-        # ── performance por canal ─────────────────────────────────────
         met_canal = st.radio("Métrica", ["Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                              horizontal=True, key="rs_canal_met", label_visibility="collapsed")
 
@@ -784,7 +744,7 @@ def render_radar_shopee():
         elif met_canal == "Ticket Médio (R$)":
             tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
             cp  = tmp.groupby("Sub_id2")["Comissao_item"].mean().reset_index(name="Valor")
-        else:  # Cliques
+        else:
             cp = dh.groupby("Sub_id2")["ID_Pedido"].count().reset_index(name="Valor")
 
         cp = cp[cp["Sub_id2"] != ""].sort_values("Valor", ascending=True)
@@ -797,20 +757,16 @@ def render_radar_shopee():
             margin=dict(t=36,b=0,l=0,r=70), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
         st.plotly_chart(fig_cp, use_container_width=True)
 
-        # ── latência — cards visuais ──────────────────────────────────
         st.markdown('<div style="color:#c5936d;font-size:13px;font-weight:600;margin:20px 0 10px;">⏱️ Latência clique → compra por Canal</div>', unsafe_allow_html=True)
 
         lat_df = dh[dh["Latencia_h"].notna() & (dh["Latencia_h"] >= 0)].copy()
 
-        # ordem fixa de canais: story, pago, organico + outros
         canais_disp_lat = [c for c in CANAIS_ORD if c in dh["Sub_id2"].unique()] + \
                           [c for c in dh["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
 
         if not lat_df.empty:
-            # cards de latência média + mediana por canal
             lat_grp = lat_df.groupby("Sub_id2")["Latencia_h"].agg(Media="mean", Mediana="median").reset_index()
             lat_grp = lat_grp[lat_grp["Sub_id2"] != ""]
-            # reordenar por CANAIS_ORD
             lat_grp["_ord"] = lat_grp["Sub_id2"].apply(lambda c: CANAIS_ORD.index(c) if c in CANAIS_ORD else 99)
             lat_grp = lat_grp.sort_values("_ord").drop(columns="_ord")
 
@@ -832,12 +788,9 @@ def render_radar_shopee():
                         f'</div></div>',
                         unsafe_allow_html=True)
 
-            # ── distribuição urgência 3 faixas ────────────────────────
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:18px 0 10px;">🚦 Distribuição de Compras por Janela de Tempo</div>', unsafe_allow_html=True)
 
-            COR_F1 = "#7a9e4e"   # <1h  — verde
-            COR_F2 = "#d4a017"   # 1-6h — amarelo
-            COR_F3 = "#c0392b"   # >6h  — vermelho
+            COR_F1 = "#7a9e4e"; COR_F2 = "#d4a017"; COR_F3 = "#c0392b"
 
             rows_urg = []
             for canal_n in canais_disp_lat:
@@ -875,7 +828,6 @@ def render_radar_shopee():
                             f'</div>',
                             unsafe_allow_html=True)
 
-            # ── histograma de latência ────────────────────────────────
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:18px 0 8px;">Distribuição de Latência por Canal (histograma)</div>', unsafe_allow_html=True)
             canal_hist = st.selectbox("Canal", canais_disp_lat, key="rs_hist_canal")
             df_hist = lat_df[lat_df["Sub_id2"] == canal_hist]["Latencia_h"].clip(upper=72)
@@ -891,12 +843,10 @@ def render_radar_shopee():
                 xaxis_title="Latência (h)", yaxis_title="Nº Pedidos")
             st.plotly_chart(fig_hist, use_container_width=True)
 
-        # ── vendas por canal × dia ────────────────────────────────────
         st.markdown('<div style="color:#c5936d;font-size:13px;font-weight:600;margin:20px 0 10px;">📈 Vendas por Canal × Dia da Semana</div>', unsafe_allow_html=True)
         cd = dh[dh["Sub_id2"] != ""].groupby(["Sub_id2","DiaSemana"])["ID_Pedido"].nunique().reset_index(name="Vendas")
         cd["DiaSemana"] = pd.Categorical(cd["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
         cd = cd.dropna(subset=["DiaSemana"]).sort_values("DiaSemana")
-        # ordem fixa para incluir story — definida aqui, fora de qualquer bloco condicional
         canais_graf = [c for c in CANAIS_ORD if c in cd["Sub_id2"].unique()] + \
                       [c for c in cd["Sub_id2"].unique() if c not in CANAIS_ORD and c != ""]
         COR_CANAL_LINHA = {"story":"#f6e8d8","pago":"#bd6d34","organico":"#7a9e4e"}
@@ -912,9 +862,6 @@ def render_radar_shopee():
             margin=dict(t=36,b=0,l=0,r=0), **THEME_BASE, xaxis=AXIS, yaxis=AXIS, legend=LEG)
         st.plotly_chart(fig_cd, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 3 — CATEGORIA APROFUNDADA
-    # ══════════════════════════════════════════════════════════════════
     sec("🏷️ Categoria Aprofundada")
 
     if not dc.empty and "Cat_L1" in dc.columns:
@@ -934,7 +881,7 @@ def render_radar_shopee():
                 ).reset_index(name="Valor")
             elif met == "Cliques":
                 return df_in.groupby(cols_grp, dropna=False)["ID_Pedido"].count().reset_index(name="Valor")
-            else:  # CTR
+            else:
                 tot = df_in.groupby(cols_grp, dropna=False)["ID_Pedido"].nunique()
                 cli = df_in.groupby(cols_grp, dropna=False)["ID_Pedido"].count()
                 return (tot / cli.replace(0, np.nan) * 100).reset_index(name="Valor")
@@ -963,7 +910,6 @@ def render_radar_shopee():
             **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
         st.plotly_chart(fig_cat, use_container_width=True)
 
-        # ── sazonalidade ──────────────────────────────────────────────
         st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:20px 0 8px;">📅 Sazonalidade — Melhor Dia por Categoria</div>', unsafe_allow_html=True)
         if not dh.empty:
             dc_dia = dc.merge(dh[["ID_Pedido","DiaSemana"]].drop_duplicates(), on="ID_Pedido", how="left")
@@ -1004,9 +950,6 @@ def render_radar_shopee():
                         **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
                     st.plotly_chart(fig_s, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 4 — CONCENTRAÇÃO 80/20 (produtos de entrada)
-    # ══════════════════════════════════════════════════════════════════
     sec("🎯 Concentração — Produtos de Entrada (Sub_id3)")
 
     if not dc.empty and "Sub_id3" in dc.columns:
@@ -1020,7 +963,6 @@ def render_radar_shopee():
         pct_ped = cobertura_ped / max(total_dc_pedidos,1) * 100
         pct_com = cobertura_com / max(total_dc_comissao,0.01) * 100
 
-        # aviso de cobertura
         cor_aviso = "#7a9e4e" if pct_com >= 70 else ("#d4a017" if pct_com >= 40 else "#c0392b")
         st.markdown(
             f'<div style="background:#1a1210;border:1px solid {cor_aviso};border-radius:8px;'
@@ -1045,7 +987,6 @@ def render_radar_shopee():
             total_pe  = len(pe)
             val_80    = pe.head(n_80)["Comissao"].sum()
 
-            # cards resumo
             c1, c2, c3 = st.columns(3)
             c1.markdown(kpi("Produtos de Entrada", f"{total_pe}", "com Sub_id3 preenchido"), unsafe_allow_html=True)
             c2.markdown(kpi("Fazem 80% da Comissão", f"{n_80}", f"de {total_pe} produtos"), unsafe_allow_html=True)
@@ -1077,9 +1018,6 @@ def render_radar_shopee():
                 **THEME_BASE, legend=LEG, barmode="overlay")
             st.plotly_chart(fig_pe, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 5 — IPV (Índice de Potencial de Viralização)
-    # ══════════════════════════════════════════════════════════════════
     sec("🔭 IPV — Índice de Potencial de Viralização")
 
     st.markdown(
@@ -1092,22 +1030,19 @@ def render_radar_shopee():
     if not dc.empty and "Produto" in dc.columns:
         df_ipv = dc[dc["Produto"].str.strip() != ""].copy()
 
-        # métricas por produto
         ipv_grp = df_ipv.groupby("Produto").agg(
             Pedidos       = ("ID_Pedido",     "nunique"),
             Qtd           = ("Qtd",           "sum"),
             Comissao      = ("Comissao_item", "sum"),
             Preco_medio   = ("Preco",         "mean"),
-            N_canais      = ("Sub_id2",       "nunique"),   # diversidade de canais
-            N_sub3        = ("Sub_id3",       "nunique"),   # diversidade de produtos de entrada
+            N_canais      = ("Sub_id2",       "nunique"),
+            N_sub3        = ("Sub_id3",       "nunique"),
         ).reset_index()
 
-        # ticket médio por produto
         ticket_por_ped = df_ipv.groupby(["Produto","ID_Pedido"])["Comissao_item"].sum().reset_index()
         ipv_ticket     = ticket_por_ped.groupby("Produto")["Comissao_item"].mean().reset_index(name="Ticket")
         ipv_grp        = ipv_grp.merge(ipv_ticket, on="Produto", how="left")
 
-        # IPV: mínimo 2 pedidos para pontuar
         df_ipv_v = ipv_grp[ipv_grp["Pedidos"] >= 2].copy()
         if not df_ipv_v.empty:
             def norm(s):
@@ -1123,9 +1058,6 @@ def render_radar_shopee():
             ).round(1)
             df_ipv_v = df_ipv_v.sort_values("IPV", ascending=False).reset_index(drop=True)
 
-            # já são produtos de entrada? — removido (nomes não coincidem)
-
-            # top 5 campeões em cards
             top5 = df_ipv_v.head(5)
             cols_ipv = st.columns(5)
             for i, row in top5.iterrows():
@@ -1144,7 +1076,6 @@ def render_radar_shopee():
 
             st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-            # gráfico IPV top 15
             top15 = df_ipv_v.head(15).sort_values("IPV", ascending=True)
             cor_ipv_bar = ["#7a9e4e" if v >= 70 else (COR if v >= 40 else "#9c5834") for v in top15["IPV"]]
             fig_ipv = go.Figure(go.Bar(
@@ -1167,9 +1098,6 @@ def render_radar_shopee():
                 yaxis=AXIS)
             st.plotly_chart(fig_ipv, use_container_width=True)
 
-    # ══════════════════════════════════════════════════════════════════
-    #  SEÇÃO 6 — TOP PRODUTOS (tabela completa)
-    # ══════════════════════════════════════════════════════════════════
     sec("🏆 Todos os Produtos Finais")
 
     if not dc.empty and "Produto" in dc.columns:
@@ -1181,7 +1109,6 @@ def render_radar_shopee():
             N_canais      = ("Sub_id2",       "nunique"),
         ).reset_index()
 
-        # merge com IPV se disponível
         if not dc.empty and "Produto" in dc.columns:
             df_ipv_merge = dc[dc["Produto"].str.strip() != ""].groupby("Produto").agg(
                 Pedidos_ipv = ("ID_Pedido","nunique"),
@@ -1212,7 +1139,6 @@ def render_radar_shopee():
         tp = tp.sort_values("Comissao", ascending=False).reset_index(drop=True)
         tp.index = tp.index + 1
 
-        # formatação
         tp_display = tp.copy()
         tp_display["Comissao"]   = tp_display["Comissao"].apply(fmt_brl)
         tp_display["Preco_medio"]= tp_display["Preco_medio"].apply(fmt_brl)
@@ -1231,7 +1157,6 @@ def render_radar_shopee():
         st.dataframe(tp_display, use_container_width=True, height=500)
         st.caption(f"{len(tp_display)} produtos")
 
-    # ── botão refresh ──────────────────────────────────────────────────
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
     if st.button("🔄 Actualizar Radar", key="rs_refresh"):
         st.cache_data.clear(); st.rerun()
@@ -1249,7 +1174,6 @@ def main():
         with col_nav2:
             if st.button("👥 Públicos",use_container_width=True,type="primary" if st.session_state.pagina=="publicos" else "secondary"):
                 st.session_state.pagina="publicos"; st.rerun()
-        # ── NOVO BOTÃO RADAR ──
         if st.button("📡 Radar Shopee",use_container_width=True,type="primary" if st.session_state.pagina=="radar" else "secondary"):
             st.session_state.pagina="radar"; st.rerun()
         st.markdown("---")
@@ -1270,7 +1194,6 @@ def main():
         if st.button("🔄 Actualizar dados",use_container_width=True): st.cache_data.clear(); st.rerun()
         if st.button("🚪 Sair",use_container_width=True): st.session_state.logged_in=False; st.rerun()
 
-    # ── ROTEADOR ──
     pagina_actual = st.session_state.get("pagina","dashboard")
 
     if pagina_actual == "radar":
@@ -1289,7 +1212,6 @@ def main():
         render_publicos(df_raw, df_pago_raw)
         return
 
-    # ── FILTROS ──
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
     hoje=date.today(); ontem=hoje-timedelta(days=1); ref=ontem
     if "preset" not in st.session_state: st.session_state.preset="all"
@@ -1407,7 +1329,6 @@ def main():
     df_daily["Investimento"]=df_daily["Invest_pago"]+df_daily["Invest_aw"]
     df_daily["ROI_calc"]=df_daily.apply(lambda r:(r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0,axis=1)
 
-    # O resto do dashboard original continua igual a partir daqui...
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
@@ -1500,6 +1421,145 @@ def main():
             with pc2: pm2=st.selectbox("Linha",list(dp.keys()),index=2,key="pm2")
             df_pf=df_pd[(df_pd[dp[pm1]]>0)|(df_pd[dp[pm2]]>0)]
             st.plotly_chart(dual_chart(df_pf,"Data",dp[pm1],dp[pm2],"{} vs {}".format(pm1,pm2),pm1,pm2),use_container_width=True)
+
+        # ── PERFORMANCE POR CRIATIVO (Sub_id1 × Sub_id3) ──────────────
+        st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:20px 0 8px 0;">🎯 PERFORMANCE POR CRIATIVO — ROI E FUNIL DE CONVERSÃO</div>', unsafe_allow_html=True)
+
+        # Thresholds
+        MIN_DIAS  = 3
+        MIN_CLIQUES_PAUSAR = 100
+
+        df_cri_clicks = df_pago_v.groupby(["Sub_id1","Sub_id3"]).agg(
+            Cliques_Shopee=("Cliques","sum"),
+            Vendas=("Vendas","sum"),
+            Comissao=("Comissao","sum"),
+        ).reset_index()
+
+        dias_por_sid1 = df_pago_v.groupby("Sub_id1")["Data"].nunique().reset_index(name="N_dias")
+
+        inv_por_sid1 = df_pago_periodo.groupby("Sub_id1").agg(
+            Investimento=("Investimento","sum"),
+            Cliques_Meta=("Cliques_Meta","sum"),
+        ).reset_index()
+
+        df_cri = df_cri_clicks.merge(inv_por_sid1, on="Sub_id1", how="left")
+        df_cri = df_cri.merge(dias_por_sid1, on="Sub_id1", how="left")
+        df_cri["Investimento"] = df_cri["Investimento"].fillna(0)
+        df_cri["Cliques_Meta"] = df_cri["Cliques_Meta"].fillna(0)
+        df_cri["N_dias"]       = df_cri["N_dias"].fillna(0).astype(int)
+
+        total_cliques_sid1 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
+        df_cri["Invest_card"] = df_cri.apply(
+            lambda r: r["Investimento"] * (r["Cliques_Shopee"] / total_cliques_sid1[r.name])
+            if total_cliques_sid1[r.name] > 0 else 0, axis=1
+        )
+
+        df_cri["ROI"] = df_cri.apply(
+            lambda r: (r["Comissao"] - r["Invest_card"]) / r["Invest_card"]
+            if r["Invest_card"] > 0 else None, axis=1
+        )
+        df_cri["CAC"] = df_cri.apply(
+            lambda r: r["Invest_card"] / r["Vendas"] if r["Vendas"] > 0 else 0, axis=1
+        )
+
+        def badge_decisao_cri(row):
+            roi         = row["ROI"]
+            cliques     = row["Cliques_Shopee"]
+            n_dias      = row["N_dias"]
+            invest_card = row["Invest_card"]
+            if invest_card == 0:
+                return ("\u2014", "#8892a4", "#1a1a2e")
+            if n_dias < MIN_DIAS or roi is None:
+                return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
+            if roi > 1:
+                return ("\U0001f7e2 Escalar", "#7a9e4e", "#0f1f0f")
+            if roi >= 0.5:
+                return ("\U0001f7e1 Monitorar", "#d4a017", "#1f1a0a")
+            if roi >= 0:
+                return ("\U0001f7e0 Otimizar", "#bd6d34", "#1f1208")
+            if cliques >= MIN_CLIQUES_PAUSAR:
+                return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
+            return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
+
+        df_cri["_badge"] = df_cri.apply(badge_decisao_cri, axis=1)
+
+        df_cri_sorted = df_cri.copy()
+        df_cri_sorted["_roi_sort"] = df_cri_sorted["ROI"].fillna(-999)
+        df_cri_sorted = df_cri_sorted.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
+
+        header_html = (
+            '<div style="display:grid;grid-template-columns:1.8fr 1.6fr 1fr 1.2fr 1fr 1fr 1fr 1fr 1.3fr;gap:4px;'
+            'padding:7px 12px;background:#221a16;border-radius:6px 6px 0 0;'
+            'color:#c5936d;font-size:11px;font-weight:600;margin-top:8px;">'
+            '<div>Campanha (Sub_id1)</div>'
+            '<div>Card (Sub_id3)</div>'
+            '<div style="text-align:right">Invest.*</div>'
+            '<div style="text-align:right">Cliques</div>'
+            '<div style="text-align:right">Vendas</div>'
+            '<div style="text-align:right">Comiss\u00e3o</div>'
+            '<div style="text-align:right">ROI</div>'
+            '<div style="text-align:right">CAC</div>'
+            '<div style="text-align:center">Status</div>'
+            '</div>'
+        )
+
+        rows_html = ""
+        prev_sid1 = None
+        for _, row in df_cri_sorted.iterrows():
+            badge_txt, badge_cor, badge_bg = row["_badge"]
+            roi_val = row["ROI"]
+            if roi_val is None:
+                roi_str = "\u2014"; roi_cor = "#8892a4"
+            else:
+                roi_str = "{:.2f}\u00d7".format(roi_val)
+                roi_cor = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0.5 else ("#bd6d34" if roi_val >= 0 else "#c0392b"))
+            cac_str    = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
+            invest_str = "R${:.0f}".format(row["Invest_card"])
+            cliques_str = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
+            sid1_display = row["Sub_id1"] if row["Sub_id1"] != prev_sid1 else ""
+            prev_sid1    = row["Sub_id1"]
+            bg_row = "#161210" if sid1_display == "" else "#1a1410"
+            rows_html += (
+                '<div style="display:grid;grid-template-columns:1.8fr 1.6fr 1fr 1.2fr 1fr 1fr 1fr 1fr 1.3fr;gap:4px;'
+                'padding:8px 12px;border-bottom:1px solid #2a1f1a;background:{bg};'
+                'color:#f6e8d8;font-size:12px;align-items:center;">'.format(bg=bg_row) +
+                '<div style="font-weight:{fw};color:{sc}">{v}</div>'.format(
+                    fw="700" if sid1_display else "400",
+                    sc="#c5936d" if sid1_display else "#6a5a52",
+                    v=sid1_display if sid1_display else "\u21b3"
+                ) +
+                '<div style="color:#f6e8d8;">{}</div>'.format(row["Sub_id3"] if row["Sub_id3"] else "\u2014") +
+                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(invest_str) +
+                '<div style="text-align:right;">{}</div>'.format(cliques_str) +
+                '<div style="text-align:right;">{}</div>'.format(int(row["Vendas"])) +
+                '<div style="text-align:right;">R${:.0f}</div>'.format(row["Comissao"]) +
+                '<div style="text-align:right;color:{c};font-weight:700;">{v}</div>'.format(c=roi_cor, v=roi_str) +
+                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cac_str) +
+                '<div style="text-align:center;">'
+                '<span style="background:{bg};color:{cor};border:1px solid {cor};'
+                'border-radius:12px;padding:2px 9px;font-size:11px;font-weight:600;white-space:nowrap;">'
+                '{txt}</span></div>'.format(bg=badge_bg, cor=badge_cor, txt=badge_txt) +
+                '</div>'
+            )
+
+        legenda_html = (
+            '<div style="padding:8px 12px;background:#161210;border-radius:0 0 6px 6px;'
+            'border-top:1px solid #2a1f1a;display:flex;gap:14px;flex-wrap:wrap;">'
+            '<span style="color:#7a9e4e;font-size:10px;">\U0001f7e2 Escalar \u2192 ROI &gt; 1</span>'
+            '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0.5\u20131</span>'
+            '<span style="color:#bd6d34;font-size:10px;">\U0001f7e0 Otimizar \u2192 ROI 0\u20130.5</span>'
+            '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
+            '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias de dados</span>'
+            '<span style="color:#c5936d;font-size:10px;margin-left:auto;">* Invest. prop. por cliques Shopee</span>'
+            '</div>'
+        )
+
+        st.markdown(
+            '<div style="background:#0f0d0b;border:1px solid #3a2c28;border-radius:8px;overflow:hidden;">'
+            + header_html + rows_html + legenda_html + '</div>',
+            unsafe_allow_html=True
+        )
+
     else:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de campanha paga para o periodo seleccionado.</div>',unsafe_allow_html=True)
 
