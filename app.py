@@ -64,8 +64,13 @@ def fmt_brl(v): return "R$ {:,.2f}".format(v).replace(",","X").replace(".",",").
 def fmt_pct(v): return "{:.2f}%".format(v).replace(".",",")
 def fmt_num(v): return "{:,}".format(int(v)).replace(",",".")
 
-def card(label,value,color="blue",delta_html_str="",sparkline_fig=None):
-    html='<div class="metric-card {}"><div class="metric-label">{}</div><div class="metric-value">{}</div>{}</div>'.format(color,label,str(value),delta_html_str or "")
+def card(label,value,color="blue",delta_html_str="",sparkline_fig=None,avg_label="",avg_value=""):
+    avg_html = (
+        '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a1f1a;display:flex;justify-content:space-between;align-items:center;">'
+        '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{}</span>'
+        '<span style="color:#c5936d;font-size:13px;font-weight:500;">{}</span></div>'.format(avg_label,avg_value)
+    ) if avg_label else ""
+    html='<div class="metric-card {}"><div class="metric-label">{}</div><div class="metric-value">{}</div>{}{}</div>'.format(color,label,str(value),delta_html_str or "",avg_html)
     st.markdown(html,unsafe_allow_html=True)
     if sparkline_fig: st.plotly_chart(sparkline_fig,use_container_width=True,config={"displayModeBar":False})
 
@@ -1424,21 +1429,22 @@ def main():
     else: df_daily["Invest_aw"]=0.0
     df_daily["Investimento"]=df_daily["Invest_pago"]+df_daily["Invest_aw"]
     df_daily["ROI_calc"]=df_daily.apply(lambda r:(r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0,axis=1)
+    n_dias_sel = max((d_fim - d_ini).days + 1, 1)  # dias do período seleccionado
 
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
-    with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"))
+    with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(m["comissao"]/n_dias_sel))
     comissao_total_ant=mv.get("comissao",0); lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"))
-    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"))
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"),avg_label="média/dia",avg_value=fmt_brl(m["lucro"]/n_dias_sel))
+    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"),avg_label="média/dia",avg_value=fmt_brl(invest_total/n_dias_sel))
     with r4:
         roi_g=m["roi"]; cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
         comissao_ant=mv.get("comissao",0); roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
         card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"))
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
-    with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"))
-    with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"))
+    with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"),avg_label="média/dia",avg_value=fmt_num(int(m["cliques"]/n_dias_sel)))
+    with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"),avg_label="média/dia",avg_value=fmt_num(int(m["vendas"]/n_dias_sel)))
     with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"))
     with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"))
 
@@ -1454,9 +1460,19 @@ def main():
                     else: c="#7a9e4e" if pct>0 else "#c0392b"; ar="▲" if pct>0 else "▼"
                     return '<span style="color:{};font-size:10px;">{} {:.1f}%</span>'.format(c,ar,abs(pct))
                 a=ma if ma else {}
-                st.markdown("""<div class="canal-card"><div class="canal-title">{e} {n}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><div class="canal-metric">Vendas</div><div class="canal-value">{v}</div>{tv}</div><div><div class="canal-metric">Comissao</div><div class="canal-value">{c}</div>{tc}</div><div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}</div>{tcl}</div><div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div>{tctr}</div><div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div>{ttm}</div></div></div>""".format(
-                    e=emoji,n=nome,v=fmt_num(mc["vendas"]),tv=tr(mc["vendas"],a.get("vendas",0)),c=fmt_brl(mc["comissao"]),tc=tr(mc["comissao"],a.get("comissao",0)),
-                    cl=fmt_num(mc["cliques"]),tcl=tr(mc["cliques"],a.get("cliques",0)),ctr=fmt_pct(mc["ctr_shopee"]),tctr=tr(mc["ctr_shopee"],a.get("ctr_shopee",0)),
+                def _avg(val): return '<span style="color:#6a5a52;font-size:11px;font-weight:400;margin-left:6px;">{}/dia</span>'.format(val)
+                st.markdown("""<div class="canal-card"><div class="canal-title">{e} {n}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+<div><div class="canal-metric">Vendas</div><div class="canal-value">{v}{av}</div>{tv}</div>
+<div><div class="canal-metric">Comissao</div><div class="canal-value">{c}{ac}</div>{tc}</div>
+<div><div class="canal-metric">Cliques</div><div class="canal-value">{cl}{acl}</div>{tcl}</div>
+<div><div class="canal-metric">CTR</div><div class="canal-value">{ctr}</div>{tctr}</div>
+<div><div class="canal-metric">Ticket Medio</div><div class="canal-value">{tm}</div>{ttm}</div>
+</div></div>""".format(
+                    e=emoji,n=nome,
+                    v=fmt_num(mc["vendas"]),av=_avg(fmt_num(int(mc["vendas"]/n_dias_sel))),tv=tr(mc["vendas"],a.get("vendas",0)),
+                    c=fmt_brl(mc["comissao"]),ac=_avg(fmt_brl(mc["comissao"]/n_dias_sel)),tc=tr(mc["comissao"],a.get("comissao",0)),
+                    cl=fmt_num(mc["cliques"]),acl=_avg(fmt_num(int(mc["cliques"]/n_dias_sel))),tcl=tr(mc["cliques"],a.get("cliques",0)),
+                    ctr=fmt_pct(mc["ctr_shopee"]),tctr=tr(mc["ctr_shopee"],a.get("ctr_shopee",0)),
                     tm=fmt_brl(mc["ticket"]),ttm=tr(mc["ticket"],a.get("ticket",0))),unsafe_allow_html=True)
             else:
                 st.markdown('<div class="canal-card"><div class="canal-title">{} {}</div><div style="color:#8892a4;">Sem dados</div></div>'.format(emoji,nome),unsafe_allow_html=True)
