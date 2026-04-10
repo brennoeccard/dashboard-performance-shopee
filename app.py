@@ -1270,6 +1270,9 @@ def main():
         _, bcol1, bcol2 = st.columns([4, 1, 1])
         with bcol1:
             if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
+                # Limpar widgets multiselect (forçar reset dos valores em cache)
+                for _k in ["ms2","ms1","ms3"]: 
+                    if _k in st.session_state: del st.session_state[_k]
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_def, "d_fim": d_fim_def,
                     "sid2": [], "sid1": [], "sid3": []
@@ -1278,19 +1281,14 @@ def main():
                 st.rerun()
         with bcol2:
             if st.button("🔍 Aplicar", use_container_width=True, type="primary", key="btn_aplicar"):
-                st.session_state.filtros_aplicados = {
-                    "d_ini": d_ini_widget, "d_fim": d_fim_widget,
-                    "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
-                }
-                # Não setar _filtros_expander_open → expander fecha (expanded=False por omissão)
-                st.rerun()
+                st.rerun()  # Filtros já activos automaticamente — rerun força refresh visual
 
-    # Ler filtros do estado aplicado (não dos widgets directamente)
-    fa = st.session_state.filtros_aplicados
-    d_ini, d_fim = fa["d_ini"], fa["d_fim"]
-    sid2_activo = set(fa["sid2"]) if fa["sid2"] else None
-    sid1_activo = set(fa["sid1"]) if fa["sid1"] else None
-    sid3_activo = set(fa["sid3"]) if fa["sid3"] else None
+    # Aplicação automática: ler directamente dos widgets
+    # (o botão Aplicar é um atalho visual, não obrigatório)
+    d_ini, d_fim = d_ini_widget, d_fim_widget
+    sid2_activo = set(sid2_widget) if sid2_widget else None
+    sid1_activo = set(sid1_widget) if sid1_widget else None
+    sid3_activo = set(sid3_widget) if sid3_widget else None
 
     # Mostrar resumo dos filtros activos
     filtros_activos = []
