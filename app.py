@@ -1270,9 +1270,10 @@ def main():
         _, bcol1, bcol2 = st.columns([4, 1, 1])
         with bcol1:
             if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
-                # Limpar widgets multiselect (forçar reset dos valores em cache)
-                for _k in ["ms2","ms1","ms3"]: 
+                # Apagar keys dos widgets multiselect → Streamlit rerenderiza vazios
+                for _k in ["ms2", "ms1", "ms3"]:
                     if _k in st.session_state: del st.session_state[_k]
+                # Resetar filtros_aplicados para o estado inicial
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_def, "d_fim": d_fim_def,
                     "sid2": [], "sid1": [], "sid3": []
@@ -1281,14 +1282,32 @@ def main():
                 st.rerun()
         with bcol2:
             if st.button("🔍 Aplicar", use_container_width=True, type="primary", key="btn_aplicar"):
-                st.rerun()  # Filtros já activos automaticamente — rerun força refresh visual
+                st.session_state.filtros_aplicados = {
+                    "d_ini": d_ini_widget, "d_fim": d_fim_widget,
+                    "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
+                }
+                st.rerun()
 
-    # Aplicação automática: ler directamente dos widgets
-    # (o botão Aplicar é um atalho visual, não obrigatório)
-    d_ini, d_fim = d_ini_widget, d_fim_widget
-    sid2_activo = set(sid2_widget) if sid2_widget else None
-    sid1_activo = set(sid1_widget) if sid1_widget else None
-    sid3_activo = set(sid3_widget) if sid3_widget else None
+    # Fonte de verdade: filtros_aplicados (actualizado pelo botão Aplicar ou automaticamente)
+    # Aplicação automática: actualizar filtros_aplicados sempre que widgets mudam
+    _fa_actual = st.session_state.filtros_aplicados
+    _widgets_mudaram = (
+        d_ini_widget  != _fa_actual["d_ini"] or
+        d_fim_widget  != _fa_actual["d_fim"] or
+        sid2_widget   != _fa_actual["sid2"] or
+        sid1_widget   != _fa_actual["sid1"] or
+        sid3_widget   != _fa_actual["sid3"]
+    )
+    if _widgets_mudaram:
+        st.session_state.filtros_aplicados = {
+            "d_ini": d_ini_widget, "d_fim": d_fim_widget,
+            "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
+        }
+    fa = st.session_state.filtros_aplicados
+    d_ini, d_fim = fa["d_ini"], fa["d_fim"]
+    sid2_activo = set(fa["sid2"]) if fa["sid2"] else None
+    sid1_activo = set(fa["sid1"]) if fa["sid1"] else None
+    sid3_activo = set(fa["sid3"]) if fa["sid3"] else None
 
     # Mostrar resumo dos filtros activos
     filtros_activos = []
