@@ -1270,14 +1270,13 @@ def main():
         _, bcol1, bcol2 = st.columns([4, 1, 1])
         with bcol1:
             if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
-                # Apagar keys dos widgets multiselect → Streamlit rerenderiza vazios
                 for _k in ["ms2", "ms1", "ms3"]:
                     if _k in st.session_state: del st.session_state[_k]
-                # Resetar filtros_aplicados para o estado inicial
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_def, "d_fim": d_fim_def,
                     "sid2": [], "sid1": [], "sid3": []
                 }
+                st.session_state["_a_limpar"] = True
                 st.session_state.preset = "7d"
                 st.rerun()
         with bcol2:
@@ -1288,21 +1287,23 @@ def main():
                 }
                 st.rerun()
 
-    # Fonte de verdade: filtros_aplicados (actualizado pelo botão Aplicar ou automaticamente)
-    # Aplicação automática: actualizar filtros_aplicados sempre que widgets mudam
-    _fa_actual = st.session_state.filtros_aplicados
-    _widgets_mudaram = (
-        d_ini_widget  != _fa_actual["d_ini"] or
-        d_fim_widget  != _fa_actual["d_fim"] or
-        sid2_widget   != _fa_actual["sid2"] or
-        sid1_widget   != _fa_actual["sid1"] or
-        sid3_widget   != _fa_actual["sid3"]
-    )
-    if _widgets_mudaram:
-        st.session_state.filtros_aplicados = {
-            "d_ini": d_ini_widget, "d_fim": d_fim_widget,
-            "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
-        }
+    # Fonte de verdade: filtros_aplicados
+    # Se acabou de limpar, não actualizar com valores dos widgets (estão a ser apagados)
+    _a_limpar = st.session_state.pop("_a_limpar", False)
+    if not _a_limpar:
+        _fa_actual = st.session_state.filtros_aplicados
+        _widgets_mudaram = (
+            d_ini_widget  != _fa_actual["d_ini"] or
+            d_fim_widget  != _fa_actual["d_fim"] or
+            sid2_widget   != _fa_actual["sid2"] or
+            sid1_widget   != _fa_actual["sid1"] or
+            sid3_widget   != _fa_actual["sid3"]
+        )
+        if _widgets_mudaram:
+            st.session_state.filtros_aplicados = {
+                "d_ini": d_ini_widget, "d_fim": d_fim_widget,
+                "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
+            }
     fa = st.session_state.filtros_aplicados
     d_ini, d_fim = fa["d_ini"], fa["d_fim"]
     sid2_activo = set(fa["sid2"]) if fa["sid2"] else None
@@ -1372,7 +1373,9 @@ def main():
     if _gaps:
         _gaps_txt=_gaps[0].strftime("%d/%m") if len(_gaps)==1 else (", ".join(d.strftime("%d/%m") for d in _gaps) if len(_gaps)<=3 else ", ".join(d.strftime("%d/%m") for d in _gaps[:3])+f" (+{len(_gaps)-3})")
         st.markdown(f'''<div style="background:#1a1210;border:1px solid #d4a017;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;"><span style="font-size:14px;">⚠️</span><span style="color:#d4a017;font-size:12px;font-weight:600;">Sem dados em: <span style="font-weight:400;">{_gaps_txt}</span> — o script pode não ter corrido nesses dias.</span></div>''',unsafe_allow_html=True)
-    invest_pago=df_pago_periodo["Investimento"].sum() if not df_pago_periodo.empty else 0.0
+    # invest_pago = 0 se filtro de canal excluir "pago"
+    _canal_tem_pago = (sid2_activo is None) or ("pago" in sid2_activo)
+    invest_pago = (df_pago_periodo["Investimento"].sum() if (not df_pago_periodo.empty and _canal_tem_pago) else 0.0)
     # Awareness omitido quando há filtro de Sub_id1/Sub_id3 — não incluir no invest_total
     invest_aw=df_aw["Investimento_aw"].sum() if (not df_aw.empty and not aw_omitido) else 0.0
     invest_total=invest_pago+invest_aw
