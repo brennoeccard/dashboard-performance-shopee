@@ -1452,19 +1452,23 @@ def main():
         tot_clq = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
         df_cri["Invest_card"] = (df_cri["Investimento"] * df_cri["Cliques_Shopee"].div(tot_clq.replace(0, np.nan))).fillna(0)
 
-        # Excluir linhas sem investimento — resetar índice antes de qualquer .div posterior
+        # Separar com e sem investimento — nunca excluir, mostrar ambas
+        df_cri_sem_inv = df_cri[df_cri["Invest_card"] == 0].copy().reset_index(drop=True)
         df_cri = df_cri[df_cri["Invest_card"] > 0].copy().reset_index(drop=True)
+        # Preencher colunas de métricas nas linhas sem investimento
+        for _col in ["Cliques_Meta_card","ROI","Receita","CAC","RPC","CPC","CTR"]:
+            df_cri_sem_inv[_col] = np.nan
 
-        if df_cri.empty:
+        if df_cri.empty and df_cri_sem_inv.empty:
             st.markdown(
                 '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;'
                 'padding:14px 16px;color:#c5936d;font-size:13px;">'
-                'Sem criativos com investimento no período seleccionado.</div>',
+                'Sem criativos no período seleccionado.</div>',
                 unsafe_allow_html=True
             )
         else:
             # Recalcular proporções com índices limpos
-            tot_clq2 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
+            tot_clq2 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum") if not df_cri.empty else pd.Series(dtype=float)
             df_cri["Cliques_Meta_card"] = (df_cri["Cliques_Meta"] * df_cri["Cliques_Shopee"].div(tot_clq2.replace(0, np.nan))).fillna(0)
 
             df_cri["ROI"]     = (df_cri["Comissao"] - df_cri["Invest_card"]) / df_cri["Invest_card"]
