@@ -1222,17 +1222,12 @@ def main():
     elif p=="28d":  d_ini_def=max(ref-timedelta(days=27),data_min)
     elif p=="30d":  d_ini_def=max(ref-timedelta(days=29),data_min)
     else:           d_ini_def=data_min
-    d_fim_def=hoje
-    # ── STEP 1: filtrar por data para gerar opções dos dropdowns ────────
-    # Inclui "hoje" nas opções (max_value=hoje) para permitir filtrar dados do dia
-    # Opções geradas só do intervalo de datas default para evitar opções fantasma
-    _df_periodo_def = df_raw[
-        (df_raw["Data"].dt.date >= d_ini_def) &
-        (df_raw["Data"].dt.date <= hoje)
-    ]
-    sid2_opts = sorted([x for x in _df_periodo_def["Sub_id2"].unique() if str(x).strip()])
-    sid1_opts = sorted([x for x in _df_periodo_def["Sub_id1"].unique() if str(x).strip()])
-    sid3_opts = sorted([x for x in _df_periodo_def["Sub_id3"].unique() if str(x).strip()])
+    d_fim_def=hoje if p=="hoje" else ontem
+    # ── STEP 1: opções dos dropdowns — geradas do histórico completo ───
+    # (não do período seleccionado, para evitar dropdowns vazios ao mudar datas)
+    sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if str(x).strip()])
+    sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if str(x).strip()])
+    sid3_opts = sorted([x for x in df_raw["Sub_id3"].unique() if str(x).strip()])
 
     with st.expander("🎛️ Filtros", expanded=False):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
@@ -1249,17 +1244,8 @@ def main():
             if st.button("30 dias", use_container_width=True, key="b30"): st.session_state.preset="30d";   st.rerun()
         with b6:
             if st.button("Tudo",    use_container_width=True, key="ba"):  st.session_state.preset="all";   st.rerun()
-        # Recalcular d_ini_def agora que "hoje" é preset possível
-        p2 = st.session_state.get("preset","all")
-        if   p2=="hoje": d_ini_def2 = hoje
-        elif p2=="7d":   d_ini_def2 = max(ref - timedelta(days=6),  data_min)
-        elif p2=="14d":  d_ini_def2 = max(ref - timedelta(days=13), data_min)
-        elif p2=="28d":  d_ini_def2 = max(ref - timedelta(days=27), data_min)
-        elif p2=="30d":  d_ini_def2 = max(ref - timedelta(days=29), data_min)
-        else:            d_ini_def2 = data_min
-        d_fim_def2 = hoje  # hoje sempre disponível como fim
-        datas = st.date_input("", value=(d_ini_def2, d_fim_def2), min_value=data_min, max_value=hoje, label_visibility="collapsed")
-        d_ini, d_fim = (datas if isinstance(datas, tuple) and len(datas) == 2 else (d_ini_def2, d_fim_def2))
+        datas = st.date_input("", value=(d_ini_def, d_fim_def), min_value=data_min, max_value=hoje, label_visibility="collapsed")
+        d_ini, d_fim = (datas if isinstance(datas, tuple) and len(datas) == 2 else (d_ini_def, d_fim_def))
 
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>', unsafe_allow_html=True)
