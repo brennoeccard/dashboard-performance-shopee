@@ -1214,15 +1214,15 @@ def main():
 
     data_min=df_raw["Data"].min().date(); data_max=df_raw["Data"].max().date()
     hoje=date.today(); ontem=hoje-timedelta(days=1); ref=ontem
-    if "preset" not in st.session_state: st.session_state.preset="all"
+    if "preset" not in st.session_state: st.session_state.preset="7d"
     p=st.session_state.get("preset","all")
-    if   p=="hoje": d_ini_def=hoje
+    if   p=="ontem": d_ini_def=ontem
     elif p=="7d":   d_ini_def=max(ref-timedelta(days=6),data_min)
     elif p=="14d":  d_ini_def=max(ref-timedelta(days=13),data_min)
     elif p=="28d":  d_ini_def=max(ref-timedelta(days=27),data_min)
     elif p=="30d":  d_ini_def=max(ref-timedelta(days=29),data_min)
     else:           d_ini_def=data_min
-    d_fim_def=hoje if p=="hoje" else ontem
+    d_fim_def=ontem
     # ── STEP 1: opções dos dropdowns — geradas do histórico completo ───
     # (não do período seleccionado, para evitar dropdowns vazios ao mudar datas)
     sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if str(x).strip()])
@@ -1233,7 +1233,7 @@ def main():
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
         b1,b2,b3,b4,b5,b6 = st.columns(6)
         with b1:
-            if st.button("Hoje",    use_container_width=True, key="b0"):  st.session_state.preset="hoje";  st.rerun()
+            if st.button("Ontem",   use_container_width=True, key="b0"):  st.session_state.preset="ontem"; st.rerun()
         with b2:
             if st.button("7 dias",  use_container_width=True, key="b7"):  st.session_state.preset="7d";    st.rerun()
         with b3:
