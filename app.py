@@ -1216,57 +1216,93 @@ def main():
     hoje=date.today(); ontem=hoje-timedelta(days=1); ref=ontem
     if "preset" not in st.session_state: st.session_state.preset="all"
     p=st.session_state.get("preset","all")
-    if   p=="7d":  d_ini_def=max(ref-timedelta(days=6),data_min)
-    elif p=="14d": d_ini_def=max(ref-timedelta(days=13),data_min)
-    elif p=="28d": d_ini_def=max(ref-timedelta(days=27),data_min)
-    elif p=="30d": d_ini_def=max(ref-timedelta(days=29),data_min)
-    else:          d_ini_def=data_min
-    d_fim_def=ontem
-    sid2_opts=sorted([x for x in df_raw["Sub_id2"].unique() if x.strip()])
-    sid1_opts=sorted([x for x in df_raw["Sub_id1"].unique() if x.strip()])
-    sid3_opts=sorted([x for x in df_raw["Sub_id3"].unique() if x.strip()])
-    with st.expander("🎛️ Filtros",expanded=False):
-        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>',unsafe_allow_html=True)
-        b1,b2,b3,b4,b5=st.columns(5)
+    if   p=="hoje": d_ini_def=hoje
+    elif p=="7d":   d_ini_def=max(ref-timedelta(days=6),data_min)
+    elif p=="14d":  d_ini_def=max(ref-timedelta(days=13),data_min)
+    elif p=="28d":  d_ini_def=max(ref-timedelta(days=27),data_min)
+    elif p=="30d":  d_ini_def=max(ref-timedelta(days=29),data_min)
+    else:           d_ini_def=data_min
+    d_fim_def=hoje
+    # ── STEP 1: filtrar por data para gerar opções dos dropdowns ────────
+    # Inclui "hoje" nas opções (max_value=hoje) para permitir filtrar dados do dia
+    # Opções geradas só do intervalo de datas default para evitar opções fantasma
+    _df_periodo_def = df_raw[
+        (df_raw["Data"].dt.date >= d_ini_def) &
+        (df_raw["Data"].dt.date <= hoje)
+    ]
+    sid2_opts = sorted([x for x in _df_periodo_def["Sub_id2"].unique() if str(x).strip()])
+    sid1_opts = sorted([x for x in _df_periodo_def["Sub_id1"].unique() if str(x).strip()])
+    sid3_opts = sorted([x for x in _df_periodo_def["Sub_id3"].unique() if str(x).strip()])
+
+    with st.expander("🎛️ Filtros", expanded=False):
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
+        b1,b2,b3,b4,b5,b6 = st.columns(6)
         with b1:
-            if st.button("7 dias",use_container_width=True,key="b7"): st.session_state.preset="7d"; st.rerun()
+            if st.button("Hoje",    use_container_width=True, key="b0"):  st.session_state.preset="hoje";  st.rerun()
         with b2:
-            if st.button("14 dias",use_container_width=True,key="b14"): st.session_state.preset="14d"; st.rerun()
+            if st.button("7 dias",  use_container_width=True, key="b7"):  st.session_state.preset="7d";    st.rerun()
         with b3:
-            if st.button("28 dias",use_container_width=True,key="b28"): st.session_state.preset="28d"; st.rerun()
+            if st.button("14 dias", use_container_width=True, key="b14"): st.session_state.preset="14d";   st.rerun()
         with b4:
-            if st.button("30 dias",use_container_width=True,key="b30"): st.session_state.preset="30d"; st.rerun()
+            if st.button("28 dias", use_container_width=True, key="b28"): st.session_state.preset="28d";   st.rerun()
         with b5:
-            if st.button("Tudo",use_container_width=True,key="ba"): st.session_state.preset="all"; st.rerun()
-        datas=st.date_input("",value=(d_ini_def,d_fim_def),min_value=data_min,max_value=ontem,label_visibility="collapsed")
-        d_ini,d_fim=(datas if isinstance(datas,tuple) and len(datas)==2 else (d_ini_def,d_fim_def))
-        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
-        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>',unsafe_allow_html=True)
-        sid2_sel=st.multiselect("",sid2_opts,default=[],placeholder="Todos",label_visibility="collapsed",key="ms2")
-        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
-        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id1</div>',unsafe_allow_html=True)
-        sid1_sel=st.multiselect("",sid1_opts,default=[],placeholder="Todos",label_visibility="collapsed",key="ms1")
-        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>",unsafe_allow_html=True)
-        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>',unsafe_allow_html=True)
-        sid3_sel=st.multiselect("",sid3_opts,default=[],placeholder="Todos",label_visibility="collapsed",key="ms3")
-    if not sid2_sel: sid2_sel=sid2_opts
-    if not sid1_sel: sid1_sel=sid1_opts
-    if not sid3_sel: sid3_sel=sid3_opts
-    mask=((df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim))
-    if sid2_sel!=sid2_opts: mask=mask&df_raw["Sub_id2"].isin(sid2_sel)
-    if sid1_sel!=sid1_opts: mask=mask&df_raw["Sub_id1"].isin(sid1_sel)
-    if sid3_sel!=sid3_opts: mask=mask&df_raw["Sub_id3"].isin(sid3_sel)
-    df=df_raw[mask].copy()
+            if st.button("30 dias", use_container_width=True, key="b30"): st.session_state.preset="30d";   st.rerun()
+        with b6:
+            if st.button("Tudo",    use_container_width=True, key="ba"):  st.session_state.preset="all";   st.rerun()
+        # Recalcular d_ini_def agora que "hoje" é preset possível
+        p2 = st.session_state.get("preset","all")
+        if   p2=="hoje": d_ini_def2 = hoje
+        elif p2=="7d":   d_ini_def2 = max(ref - timedelta(days=6),  data_min)
+        elif p2=="14d":  d_ini_def2 = max(ref - timedelta(days=13), data_min)
+        elif p2=="28d":  d_ini_def2 = max(ref - timedelta(days=27), data_min)
+        elif p2=="30d":  d_ini_def2 = max(ref - timedelta(days=29), data_min)
+        else:            d_ini_def2 = data_min
+        d_fim_def2 = hoje  # hoje sempre disponível como fim
+        datas = st.date_input("", value=(d_ini_def2, d_fim_def2), min_value=data_min, max_value=hoje, label_visibility="collapsed")
+        d_ini, d_fim = (datas if isinstance(datas, tuple) and len(datas) == 2 else (d_ini_def2, d_fim_def2))
+
+        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>', unsafe_allow_html=True)
+        sid2_sel = st.multiselect("", sid2_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms2")
+        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id1</div>', unsafe_allow_html=True)
+        sid1_sel = st.multiselect("", sid1_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms1")
+        st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>', unsafe_allow_html=True)
+        sid3_sel = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms3")
+
+    # ── STEP 2: converter selecções vazias em "todos" usando sets ─────────
+    sid2_activo = set(sid2_sel) if sid2_sel else None
+    sid1_activo = set(sid1_sel) if sid1_sel else None
+    sid3_activo = set(sid3_sel) if sid3_sel else None
+
+    # ── STEP 3: aplicar filtros ao df_raw ─────────────────────────────────
+    mask = (df_raw["Data"].dt.date >= d_ini) & (df_raw["Data"].dt.date <= d_fim)
+    if sid2_activo: mask = mask & df_raw["Sub_id2"].isin(sid2_activo)
+    if sid1_activo: mask = mask & df_raw["Sub_id1"].isin(sid1_activo)
+    if sid3_activo: mask = mask & df_raw["Sub_id3"].isin(sid3_activo)
+    df = df_raw[mask].copy()
+
+    # ── STEP 4: filtrar df_pago_periodo com os mesmos critérios ──────────
+    # Sub_id2 não se aplica (planilha Pago só tem dados pagos)
+    # Sub_id3 é mapeado via Sub_id1 para cruzar com df_pago_raw
     if not df_pago_raw.empty:
-        _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
-        mp=(df_pago_raw["Data"].dt.date>=_di)&(df_pago_raw["Data"].dt.date<=_df)
-        if sid1_sel!=sid1_opts: mp=mp&df_pago_raw["Sub_id1"].isin(sid1_sel)
-        if sid3_sel!=sid3_opts:
-            sid1s_do_sid3=(df_raw[(df_raw["Data"].dt.date>=_di)&(df_raw["Data"].dt.date<=_df)&(df_raw["Sub_id3"].isin(sid3_sel))]["Sub_id1"].unique().tolist())
-            mp=mp&df_pago_raw["Sub_id1"].isin(sid1s_do_sid3)
-        df_pago_periodo=df_pago_raw[mp].copy()
+        mp = (df_pago_raw["Data"].dt.date >= d_ini) & (df_pago_raw["Data"].dt.date <= d_fim)
+        if sid1_activo:
+            mp = mp & df_pago_raw["Sub_id1"].isin(sid1_activo)
+        if sid3_activo:
+            # Mapear Sub_id3 → Sub_id1 usando df já filtrado por data e sid3
+            sid1s_do_sid3 = set(
+                df_raw[
+                    (df_raw["Data"].dt.date >= d_ini) &
+                    (df_raw["Data"].dt.date <= d_fim) &
+                    df_raw["Sub_id3"].isin(sid3_activo)
+                ]["Sub_id1"].unique()
+            )
+            mp = mp & df_pago_raw["Sub_id1"].isin(sid1s_do_sid3)
+        df_pago_periodo = df_pago_raw[mp].copy()
     else:
-        df_pago_periodo=pd.DataFrame()
+        df_pago_periodo = pd.DataFrame()
     if not df_aw_raw.empty:
         _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
         ma=(df_aw_raw["Data"].dt.date>=_di)&(df_aw_raw["Data"].dt.date<=_df)
