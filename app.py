@@ -1233,6 +1233,9 @@ def main():
             "d_ini": d_ini_def, "d_fim": d_fim_def,
             "sid2": [], "sid1": [], "sid3": []
         }
+    if "filtros_reset_cnt" not in st.session_state:
+        st.session_state.filtros_reset_cnt = 0
+    _rc = st.session_state.filtros_reset_cnt  # sufixo dos keys
 
     # Expander: aberto por defeito, fecha após aplicar filtros
     _filtros_aberto = st.session_state.get("_filtros_expander_open", False)
@@ -1258,20 +1261,20 @@ def main():
 
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>', unsafe_allow_html=True)
-        sid2_widget = st.multiselect("", sid2_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms2")
+        sid2_widget = st.multiselect("", sid2_opts, default=[], placeholder="Todos", label_visibility="collapsed", key=f"ms2_{_rc}")
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id1</div>', unsafe_allow_html=True)
-        sid1_widget = st.multiselect("", sid1_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms1")
+        sid1_widget = st.multiselect("", sid1_opts, default=[], placeholder="Todos", label_visibility="collapsed", key=f"ms1_{_rc}")
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>', unsafe_allow_html=True)
-        sid3_widget = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms3")
+        sid3_widget = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key=f"ms3_{_rc}")
 
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         _, bcol1, bcol2 = st.columns([4, 1, 1])
         with bcol1:
             if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
-                for _k in ["ms2", "ms1", "ms3"]:
-                    if _k in st.session_state: del st.session_state[_k]
+                # Incrementar contador → widgets recriados com key novo = visualmente vazios
+                st.session_state.filtros_reset_cnt += 1
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_def, "d_fim": d_fim_def,
                     "sid2": [], "sid1": [], "sid3": []
@@ -1350,8 +1353,8 @@ def main():
     else:
         df_pago_periodo = pd.DataFrame()
 
-    # Awareness: omitir quando há filtro de Sub_id1 ou Sub_id3 (não filtrável por campanha)
-    aw_omitido = bool(sid1_activo or sid3_activo)
+    # Awareness: omitir quando qualquer filtro está activo (canal, sub_id1 ou sub_id3)
+    aw_omitido = bool(sid2_activo or sid1_activo or sid3_activo)
     if not aw_omitido and not df_aw_raw.empty:
         ma = (df_aw_raw["Data"].dt.date >= d_ini) & (df_aw_raw["Data"].dt.date <= d_fim)
         df_aw = df_aw_raw[ma].copy()
