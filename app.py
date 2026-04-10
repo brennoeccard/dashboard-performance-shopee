@@ -1478,6 +1478,9 @@ def main():
                 roi     = row["ROI"]
                 cliques = row["Cliques_Shopee"]
                 n_dias  = row["N_dias"]
+                invest  = row["Invest_card"]
+                if invest == 0 or pd.isna(invest):
+                    return ("\u26a0\ufe0f Sem invest.", "#6a5a52", "#161210")
                 if n_dias < MIN_DIAS or pd.isna(roi):
                     return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
                 if roi > 1:
@@ -1488,9 +1491,14 @@ def main():
                     return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
                 return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
 
+            # Juntar: com investimento (ordenados) + sem investimento (no fim)
             df_cri["_badge"]    = df_cri.apply(badge_decisao_cri, axis=1)
             df_cri["_roi_sort"] = df_cri["ROI"].fillna(-999)
             df_cri = df_cri.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
+            if not df_cri_sem_inv.empty:
+                df_cri_sem_inv["_badge"]    = [("\u26a0\ufe0f Sem invest.", "#6a5a52", "#161210")] * len(df_cri_sem_inv)
+                df_cri_sem_inv["_roi_sort"] = -9999
+                df_cri = pd.concat([df_cri, df_cri_sem_inv], ignore_index=True)
 
             GRID = "1.4fr 1.3fr 0.8fr 0.9fr 0.7fr 0.85fr 0.85fr 0.75fr 0.8fr 0.8fr 0.65fr 0.85fr 1.15fr"
 
@@ -1517,19 +1525,25 @@ def main():
             rows_html = ""
             for _, row in df_cri.iterrows():
                 badge_txt, badge_cor, badge_bg = row["_badge"]
-                roi_val  = row["ROI"]
-                roi_str  = "{:.2f}\u00d7".format(roi_val)
-                roi_cor  = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0 else "#c0392b")
-                rec_val  = row["Receita"]
-                rec_cor  = "#7a9e4e" if rec_val >= 0 else "#c0392b"
-                cac_str  = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
-                cpc_val  = row["CPC"]
-                cpc_str  = "R${:.2f}".format(cpc_val) if cpc_val > 0 else "\u2014"
-                ctr_str  = "{:.1f}%".format(row["CTR"]) if row["CTR"] > 0 else "\u2014"
-                rpc_val  = row["RPC"]
-                rpc_str  = "R${:.3f}".format(rpc_val) if rpc_val > 0 else "\u2014"
-                rpc_cor  = ("#7a9e4e" if (rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val)
-                            else ("#c0392b" if (rpc_val > 0 and cpc_val > 0) else "#8892a4"))
+                roi_raw  = row.get("ROI", np.nan)
+                roi_val  = None if pd.isna(roi_raw) else roi_raw
+                roi_str  = "{:.2f}\u00d7".format(roi_val) if roi_val is not None else "\u2014"
+                roi_cor  = ("#7a9e4e" if roi_val is not None and roi_val > 1
+                            else ("#d4a017" if roi_val is not None and roi_val >= 0
+                            else ("#c0392b" if roi_val is not None else "#8892a4")))
+                rec_raw  = row.get("Receita", np.nan)
+                rec_str  = "R${:.0f}".format(rec_raw) if pd.notna(rec_raw) else "\u2014"
+                rec_cor  = "#7a9e4e" if pd.notna(rec_raw) and rec_raw >= 0 else ("#c0392b" if pd.notna(rec_raw) else "#8892a4")
+                cac_raw  = row.get("CAC", np.nan)
+                cac_str  = "R${:.2f}".format(cac_raw) if pd.notna(cac_raw) and cac_raw > 0 else "\u2014"
+                cpc_val  = row.get("CPC", np.nan)
+                cpc_str  = "R${:.2f}".format(cpc_val) if pd.notna(cpc_val) and cpc_val > 0 else "\u2014"
+                ctr_raw  = row.get("CTR", np.nan)
+                ctr_str  = "{:.1f}%".format(ctr_raw) if pd.notna(ctr_raw) and ctr_raw > 0 else "\u2014"
+                rpc_val  = row.get("RPC", np.nan)
+                rpc_str  = "R${:.3f}".format(rpc_val) if pd.notna(rpc_val) and rpc_val > 0 else "\u2014"
+                rpc_cor  = ("#7a9e4e" if (pd.notna(rpc_val) and pd.notna(cpc_val) and rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val)
+                            else ("#c0392b" if (pd.notna(rpc_val) and pd.notna(cpc_val) and rpc_val > 0 and cpc_val > 0) else "#8892a4"))
                 clq_str  = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
                 sid1     = row["Sub_id1"] or "\u2014"
                 sid3     = row["Sub_id3"] or "\u2014"
@@ -1543,7 +1557,7 @@ def main():
                     '<div style="text-align:right;">{}</div>'.format(clq_str) +
                     '<div style="text-align:right;">{}</div>'.format(int(row["Vendas"])) +
                     '<div style="text-align:right;">R${:.0f}</div>'.format(row["Comissao"]) +
-                    '<div style="text-align:right;color:{c};font-weight:600;">R${:.0f}</div>'.format(rec_val, c=rec_cor) +
+                    '<div style="text-align:right;color:{c};font-weight:600;">{v}</div>'.format(c=rec_cor, v=rec_str) +
                     '<div style="text-align:right;color:{c};font-weight:700;">{v}</div>'.format(c=roi_cor, v=roi_str) +
                     '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cac_str) +
                     '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cpc_str) +
