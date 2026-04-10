@@ -73,20 +73,20 @@ def delta_html(val,ref,inverted=False):
     if ref is None or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
     if ref<0 and val>=0:
         pct=(val-ref)/abs(ref)*100
-        if not inverted: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-        else: return '<span class="metric-delta-neg">▲ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        if not inverted: return '<span class="metric-delta-pos">▲ {:.1f}% vs período ant.</span>'.format(abs(pct))
+        else: return '<span class="metric-delta-neg">▲ {:.1f}% vs período ant.</span>'.format(abs(pct))
     if ref>0 and val<0:
         pct=(val-ref)/abs(ref)*100
-        if not inverted: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-        else: return '<span class="metric-delta-pos">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
+        if not inverted: return '<span class="metric-delta-neg">▼ {:.1f}% vs período ant.</span>'.format(abs(pct))
+        else: return '<span class="metric-delta-pos">▼ {:.1f}% vs período ant.</span>'.format(abs(pct))
     pct=(val-ref)/abs(ref)*100
     if inverted:
-        if pct<0: return '<span class="metric-delta-pos">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-        elif pct>0: return '<span class="metric-delta-neg">▲ {:.1f}% vs semana ant.</span>'.format(pct)
+        if pct<0: return '<span class="metric-delta-pos">▼ {:.1f}% vs período ant.</span>'.format(abs(pct))
+        elif pct>0: return '<span class="metric-delta-neg">▲ {:.1f}% vs período ant.</span>'.format(pct)
     else:
-        if pct>0: return '<span class="metric-delta-pos">▲ {:.1f}% vs semana ant.</span>'.format(pct)
-        elif pct<0: return '<span class="metric-delta-neg">▼ {:.1f}% vs semana ant.</span>'.format(abs(pct))
-    return '<span class="metric-delta-neu">= igual semana ant.</span>'
+        if pct>0: return '<span class="metric-delta-pos">▲ {:.1f}% vs período ant.</span>'.format(pct)
+        elif pct<0: return '<span class="metric-delta-neg">▼ {:.1f}% vs período ant.</span>'.format(abs(pct))
+    return '<span class="metric-delta-neu">= igual período ant.</span>'
 
 def sparkline(df_d,col,color="#bd6d34"):
     if col not in df_d.columns or df_d[col].sum()==0: return None
@@ -1426,7 +1426,7 @@ def main():
         st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:20px 0 8px 0;">🎯 PERFORMANCE POR CRIATIVO — ROI E FUNIL DE CONVERSÃO</div>', unsafe_allow_html=True)
 
         # Thresholds
-        MIN_DIAS           = 3
+        MIN_DIAS  = 3
         MIN_CLIQUES_PAUSAR = 100
 
         df_cri_clicks = df_pago_v.groupby(["Sub_id1","Sub_id3"]).agg(
@@ -1448,136 +1448,134 @@ def main():
         df_cri["Cliques_Meta"] = df_cri["Cliques_Meta"].fillna(0)
         df_cri["N_dias"]       = df_cri["N_dias"].fillna(0).astype(int)
 
-        # Distribuir investimento proporcional por cliques Shopee dentro do sub_id1
-        total_cliques_sid1 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
-        df_cri["Invest_card"] = df_cri.apply(
-            lambda r: r["Investimento"] * (r["Cliques_Shopee"] / total_cliques_sid1[r.name])
-            if total_cliques_sid1[r.name] > 0 else 0, axis=1
-        )
+        # Distribuir investimento proporcional e proteger contra índices desalinhados
+        tot_clq = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
+        df_cri["Invest_card"] = (df_cri["Investimento"] * df_cri["Cliques_Shopee"].div(tot_clq.replace(0, np.nan))).fillna(0)
 
-        # Excluir linhas sem investimento
-        df_cri = df_cri[df_cri["Invest_card"] > 0].copy()
+        # Excluir linhas sem investimento — resetar índice antes de qualquer .div posterior
+        df_cri = df_cri[df_cri["Invest_card"] > 0].copy().reset_index(drop=True)
 
-        df_cri["ROI"] = df_cri.apply(
-            lambda r: (r["Comissao"] - r["Invest_card"]) / r["Invest_card"]
-            if r["Invest_card"] > 0 else None, axis=1
-        )
-        df_cri["Receita"]  = df_cri["Comissao"] - df_cri["Invest_card"]
-        df_cri["CAC"]      = df_cri.apply(lambda r: r["Invest_card"] / r["Vendas"] if r["Vendas"] > 0 else 0, axis=1)
-        df_cri["RPC"]      = df_cri.apply(lambda r: r["Comissao"] / r["Cliques_Shopee"] if r["Cliques_Shopee"] > 0 else 0, axis=1)
-        # CPC e CTR distribuídos proporcionalmente pelos cliques Shopee do card
-        df_cri["Cliques_Meta_card"] = df_cri.apply(
-            lambda r: r["Cliques_Meta"] * (r["Cliques_Shopee"] / total_cliques_sid1[r.name])
-            if total_cliques_sid1[r.name] > 0 else 0, axis=1
-        )
-        df_cri["CPC"] = df_cri.apply(lambda r: r["Invest_card"] / r["Cliques_Meta_card"] if r["Cliques_Meta_card"] > 0 else 0, axis=1)
-        df_cri["CTR"] = df_cri.apply(lambda r: r["Cliques_Shopee"] / r["Cliques_Meta_card"] * 100 if r["Cliques_Meta_card"] > 0 else 0, axis=1)
+        if df_cri.empty:
+            st.markdown(
+                '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;'
+                'padding:14px 16px;color:#c5936d;font-size:13px;">'
+                'Sem criativos com investimento no período seleccionado.</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            # Recalcular proporções com índices limpos
+            tot_clq2 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
+            df_cri["Cliques_Meta_card"] = (df_cri["Cliques_Meta"] * df_cri["Cliques_Shopee"].div(tot_clq2.replace(0, np.nan))).fillna(0)
 
-        def badge_decisao_cri(row):
-            roi     = row["ROI"]
-            cliques = row["Cliques_Shopee"]
-            n_dias  = row["N_dias"]
-            if n_dias < MIN_DIAS or roi is None:
+            df_cri["ROI"]     = (df_cri["Comissao"] - df_cri["Invest_card"]) / df_cri["Invest_card"]
+            df_cri["Receita"] = df_cri["Comissao"] - df_cri["Invest_card"]
+            df_cri["CAC"]     = df_cri["Invest_card"].div(df_cri["Vendas"].replace(0, np.nan)).fillna(0)
+            df_cri["RPC"]     = df_cri["Comissao"].div(df_cri["Cliques_Shopee"].replace(0, np.nan)).fillna(0)
+            df_cri["CPC"]     = df_cri["Invest_card"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
+            df_cri["CTR"]     = (df_cri["Cliques_Shopee"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan))).fillna(0) * 100
+
+            def badge_decisao_cri(row):
+                roi     = row["ROI"]
+                cliques = row["Cliques_Shopee"]
+                n_dias  = row["N_dias"]
+                if n_dias < MIN_DIAS or pd.isna(roi):
+                    return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
+                if roi > 1:
+                    return ("\U0001f7e2 Escalar", "#7a9e4e", "#0f1f0f")
+                if roi >= 0:
+                    return ("\U0001f7e1 Monitorar", "#d4a017", "#1f1a0a")
+                if cliques >= MIN_CLIQUES_PAUSAR:
+                    return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
                 return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
-            if roi > 1:
-                return ("\U0001f7e2 Escalar", "#7a9e4e", "#0f1f0f")
-            if roi >= 0:
-                return ("\U0001f7e1 Monitorar", "#d4a017", "#1f1a0a")
-            if cliques >= MIN_CLIQUES_PAUSAR:
-                return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
-            return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
 
-        df_cri["_badge"] = df_cri.apply(badge_decisao_cri, axis=1)
-        df_cri["_roi_sort"] = df_cri["ROI"].fillna(-999)
-        df_cri = df_cri.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
+            df_cri["_badge"]    = df_cri.apply(badge_decisao_cri, axis=1)
+            df_cri["_roi_sort"] = df_cri["ROI"].fillna(-999)
+            df_cri = df_cri.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
 
-        # Grid com 13 colunas: Sub_id1 | Sub_id3 | Invest | Cliques | Vendas | Comissão | Receita | ROI | CAC | CPC | CTR | RPC | Status
-        GRID = "1.4fr 1.3fr 0.8fr 0.9fr 0.7fr 0.8fr 0.8fr 0.7fr 0.8fr 0.8fr 0.7fr 0.8fr 1.1fr"
+            GRID = "1.4fr 1.3fr 0.8fr 0.9fr 0.7fr 0.85fr 0.85fr 0.75fr 0.8fr 0.8fr 0.65fr 0.85fr 1.15fr"
 
-        header_html = (
-            '<div style="display:grid;grid-template-columns:{g};gap:4px;'
-            'padding:7px 12px;background:#221a16;border-radius:6px 6px 0 0;'
-            'color:#c5936d;font-size:10px;font-weight:600;margin-top:8px;">'.format(g=GRID) +
-            '<div>Campanha</div>'
-            '<div>Card (Sub_id3)</div>'
-            '<div style="text-align:right">Invest.*</div>'
-            '<div style="text-align:right">Cliques</div>'
-            '<div style="text-align:right">Vendas</div>'
-            '<div style="text-align:right">Comiss\u00e3o</div>'
-            '<div style="text-align:right">Receita</div>'
-            '<div style="text-align:right">ROI</div>'
-            '<div style="text-align:right">CAC</div>'
-            '<div style="text-align:right">CPC</div>'
-            '<div style="text-align:right">CTR</div>'
-            '<div style="text-align:right">RPC \u25b2</div>'
-            '<div style="text-align:center">Status</div>'
-            '</div>'
-        )
-
-        rows_html = ""
-        for _, row in df_cri.iterrows():
-            badge_txt, badge_cor, badge_bg = row["_badge"]
-            roi_val = row["ROI"]
-            if roi_val is None:
-                roi_str = "\u2014"; roi_cor = "#8892a4"
-            else:
-                roi_str = "{:.2f}\u00d7".format(roi_val)
-                roi_cor = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0 else "#c0392b")
-            receita_val = row["Receita"]
-            receita_cor = "#7a9e4e" if receita_val >= 0 else "#c0392b"
-            cac_str = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
-            cpc_val = row["CPC"]
-            cpc_str = "R${:.2f}".format(cpc_val) if cpc_val > 0 else "\u2014"
-            ctr_str = "{:.1f}%".format(row["CTR"]) if row["CTR"] > 0 else "\u2014"
-            rpc_val = row["RPC"]
-            rpc_str = "R${:.3f}".format(rpc_val) if rpc_val > 0 else "\u2014"
-            # RPC verde se > CPC (cada clique gera mais do que custou), vermelho se <
-            rpc_cor = "#7a9e4e" if (rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val) else ("#c0392b" if (rpc_val > 0 and cpc_val > 0 and rpc_val <= cpc_val) else "#8892a4")
-            cliques_str = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
-            sid1 = row["Sub_id1"] if row["Sub_id1"] else "\u2014"
-            sid3 = row["Sub_id3"] if row["Sub_id3"] else "\u2014"
-            rows_html += (
+            header_html = (
                 '<div style="display:grid;grid-template-columns:{g};gap:4px;'
-                'padding:8px 12px;border-bottom:1px solid #2a1f1a;background:#1a1410;'
-                'color:#f6e8d8;font-size:11px;align-items:center;">'.format(g=GRID) +
-                '<div style="font-weight:600;color:#c5936d;font-size:11px;">{}</div>'.format(sid1) +
-                '<div style="color:#f6e8d8;">{}</div>'.format(sid3) +
-                '<div style="text-align:right;color:#c5936d;">R${:.0f}</div>'.format(row["Invest_card"]) +
-                '<div style="text-align:right;">{}</div>'.format(cliques_str) +
-                '<div style="text-align:right;">{}</div>'.format(int(row["Vendas"])) +
-                '<div style="text-align:right;">R${:.0f}</div>'.format(row["Comissao"]) +
-                '<div style="text-align:right;color:{c};font-weight:600;">R${:.0f}</div>'.format(receita_val, c=receita_cor) +
-                '<div style="text-align:right;color:{c};font-weight:700;">{v}</div>'.format(c=roi_cor, v=roi_str) +
-                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cac_str) +
-                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cpc_str) +
-                '<div style="text-align:right;color:#c5936d;">{}</div>'.format(ctr_str) +
-                '<div style="text-align:right;color:{c};font-weight:600;">{v}</div>'.format(c=rpc_cor, v=rpc_str) +
-                '<div style="text-align:center;">'
-                '<span style="background:{bg};color:{cor};border:1px solid {cor};'
-                'border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;white-space:nowrap;">'
-                '{txt}</span></div>'.format(bg=badge_bg, cor=badge_cor, txt=badge_txt) +
+                'padding:7px 12px;background:#221a16;border-radius:6px 6px 0 0;'
+                'color:#c5936d;font-size:10px;font-weight:600;margin-top:8px;">'.format(g=GRID) +
+                '<div>Campanha</div>'
+                '<div>Card (Sub_id3)</div>'
+                '<div style="text-align:right">Invest.*</div>'
+                '<div style="text-align:right">Cliques</div>'
+                '<div style="text-align:right">Vendas</div>'
+                '<div style="text-align:right">Comiss\u00e3o</div>'
+                '<div style="text-align:right">Receita</div>'
+                '<div style="text-align:right">ROI</div>'
+                '<div style="text-align:right">CAC</div>'
+                '<div style="text-align:right">CPC</div>'
+                '<div style="text-align:right">CTR</div>'
+                '<div style="text-align:right">RPC\u25b2</div>'
+                '<div style="text-align:center">Status</div>'
                 '</div>'
             )
 
-        legenda_html = (
-            '<div style="padding:8px 12px;background:#161210;border-radius:0 0 6px 6px;'
-            'border-top:1px solid #2a1f1a;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'
-            '<span style="color:#7a9e4e;font-size:10px;">\U0001f7e2 Escalar \u2192 ROI &gt; 1</span>'
-            '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0\u20131</span>'
-            '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
-            '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias</span>'
-            '<span style="color:#c5936d;font-size:10px;margin-left:auto;">'
-            '* Invest. prop. por cliques &nbsp;|&nbsp; Receita = Comiss\u00e3o \u2212 Invest. &nbsp;|&nbsp; '
-            'RPC \u25b2 = Comiss\u00e3o/Cliques &nbsp;<span style="color:#7a9e4e;">\u25cf verde</span> se RPC &gt; CPC &nbsp;<span style="color:#c0392b;">\u25cf vermelho</span> se RPC \u2264 CPC'
-            '</span>'
-            '</div>'
-        )
+            rows_html = ""
+            for _, row in df_cri.iterrows():
+                badge_txt, badge_cor, badge_bg = row["_badge"]
+                roi_val  = row["ROI"]
+                roi_str  = "{:.2f}\u00d7".format(roi_val)
+                roi_cor  = "#7a9e4e" if roi_val > 1 else ("#d4a017" if roi_val >= 0 else "#c0392b")
+                rec_val  = row["Receita"]
+                rec_cor  = "#7a9e4e" if rec_val >= 0 else "#c0392b"
+                cac_str  = "R${:.2f}".format(row["CAC"]) if row["CAC"] > 0 else "\u2014"
+                cpc_val  = row["CPC"]
+                cpc_str  = "R${:.2f}".format(cpc_val) if cpc_val > 0 else "\u2014"
+                ctr_str  = "{:.1f}%".format(row["CTR"]) if row["CTR"] > 0 else "\u2014"
+                rpc_val  = row["RPC"]
+                rpc_str  = "R${:.3f}".format(rpc_val) if rpc_val > 0 else "\u2014"
+                rpc_cor  = ("#7a9e4e" if (rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val)
+                            else ("#c0392b" if (rpc_val > 0 and cpc_val > 0) else "#8892a4"))
+                clq_str  = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
+                sid1     = row["Sub_id1"] or "\u2014"
+                sid3     = row["Sub_id3"] or "\u2014"
+                rows_html += (
+                    '<div style="display:grid;grid-template-columns:{g};gap:4px;'
+                    'padding:8px 12px;border-bottom:1px solid #2a1f1a;background:#1a1410;'
+                    'color:#f6e8d8;font-size:11px;align-items:center;">'.format(g=GRID) +
+                    '<div style="font-weight:600;color:#c5936d;">{}</div>'.format(sid1) +
+                    '<div>{}</div>'.format(sid3) +
+                    '<div style="text-align:right;color:#c5936d;">R${:.0f}</div>'.format(row["Invest_card"]) +
+                    '<div style="text-align:right;">{}</div>'.format(clq_str) +
+                    '<div style="text-align:right;">{}</div>'.format(int(row["Vendas"])) +
+                    '<div style="text-align:right;">R${:.0f}</div>'.format(row["Comissao"]) +
+                    '<div style="text-align:right;color:{c};font-weight:600;">R${:.0f}</div>'.format(rec_val, c=rec_cor) +
+                    '<div style="text-align:right;color:{c};font-weight:700;">{v}</div>'.format(c=roi_cor, v=roi_str) +
+                    '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cac_str) +
+                    '<div style="text-align:right;color:#c5936d;">{}</div>'.format(cpc_str) +
+                    '<div style="text-align:right;color:#c5936d;">{}</div>'.format(ctr_str) +
+                    '<div style="text-align:right;color:{c};font-weight:600;">{v}</div>'.format(c=rpc_cor, v=rpc_str) +
+                    '<div style="text-align:center;">'
+                    '<span style="background:{bg};color:{cor};border:1px solid {cor};'
+                    'border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;white-space:nowrap;">'
+                    '{txt}</span></div>'.format(bg=badge_bg, cor=badge_cor, txt=badge_txt) +
+                    '</div>'
+                )
 
-        st.markdown(
-            '<div style="background:#0f0d0b;border:1px solid #3a2c28;border-radius:8px;overflow:hidden;">'
-            + header_html + rows_html + legenda_html + '</div>',
-            unsafe_allow_html=True
-        )
+            legenda_html = (
+                '<div style="padding:8px 12px;background:#161210;border-radius:0 0 6px 6px;'
+                'border-top:1px solid #2a1f1a;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'
+                '<span style="color:#7a9e4e;font-size:10px;">\U0001f7e2 Escalar \u2192 ROI &gt; 1</span>'
+                '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0\u20131</span>'
+                '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
+                '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias</span>'
+                '<span style="color:#c5936d;font-size:10px;margin-left:auto;">'
+                '* Invest. prop. por cliques &nbsp;|\u00a0 Receita = Comiss\u00e3o \u2212 Invest. &nbsp;|\u00a0'
+                ' RPC\u25b2 = Comiss\u00e3o/Cliques &nbsp;'
+                '<span style="color:#7a9e4e;">\u25cf</span> verde se RPC &gt; CPC &nbsp;'
+                '<span style="color:#c0392b;">\u25cf</span> vermelho se RPC \u2264 CPC'
+                '</span></div>'
+            )
+
+            st.markdown(
+                '<div style="background:#0f0d0b;border:1px solid #3a2c28;border-radius:8px;overflow:hidden;">'
+                + header_html + rows_html + legenda_html + '</div>',
+                unsafe_allow_html=True
+            )
 
     else:
         st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de campanha paga para o periodo seleccionado.</div>',unsafe_allow_html=True)
