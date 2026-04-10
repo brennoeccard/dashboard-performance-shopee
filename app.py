@@ -1234,7 +1234,9 @@ def main():
             "sid2": [], "sid1": [], "sid3": []
         }
 
-    with st.expander("🎛️ Filtros", expanded=False):
+    _exp_open = st.session_state.pop("_filtros_expander_open", None)
+    _exp_default = False if _exp_open is False else False
+    with st.expander("🎛️ Filtros", expanded=_exp_default):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
         b1,b2,b3,b4,b5,b6 = st.columns(6)
         with b1:
@@ -1262,22 +1264,23 @@ def main():
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>', unsafe_allow_html=True)
         sid3_widget = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms3")
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        col_apply, col_reset = st.columns([2, 1])
-        with col_apply:
-            if st.button("🔍 Aplicar Filtros", use_container_width=True, type="primary", key="btn_aplicar"):
-                st.session_state.filtros_aplicados = {
-                    "d_ini": d_ini_widget, "d_fim": d_fim_widget,
-                    "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
-                }
-                st.rerun()
-        with col_reset:
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        _, bcol1, bcol2 = st.columns([4, 1, 1])
+        with bcol1:
             if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_def, "d_fim": d_fim_def,
                     "sid2": [], "sid1": [], "sid3": []
                 }
                 st.session_state.preset = "7d"
+                st.rerun()
+        with bcol2:
+            if st.button("Aplicar ↵", use_container_width=True, type="primary", key="btn_aplicar"):
+                st.session_state.filtros_aplicados = {
+                    "d_ini": d_ini_widget, "d_fim": d_fim_widget,
+                    "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
+                }
+                st.session_state["_filtros_expander_open"] = False
                 st.rerun()
 
     # Ler filtros do estado aplicado (não dos widgets directamente)
