@@ -1435,7 +1435,7 @@ def main():
             Comissao=("Comissao","sum"),
         ).reset_index()
 
-        dias_por_sid1 = df_pago_v.groupby("Sub_id1")["Data"].nunique().reset_index(name="N_dias")
+        dias_por_sid1 = df_pago_periodo.groupby("Sub_id1")["Data"].nunique().reset_index(name="N_dias")
 
         inv_por_sid1 = df_pago_periodo.groupby("Sub_id1").agg(
             Investimento=("Investimento","sum"),
@@ -1452,23 +1452,20 @@ def main():
         tot_clq = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
         df_cri["Invest_card"] = (df_cri["Investimento"] * df_cri["Cliques_Shopee"].div(tot_clq.replace(0, np.nan))).fillna(0)
 
-        # Separar com e sem investimento — nunca excluir, mostrar ambas
-        df_cri_sem_inv = df_cri[df_cri["Invest_card"] == 0].copy().reset_index(drop=True)
+        # Excluir linhas sem investimento
+        df_cri_sem_inv = pd.DataFrame()  # sempre definido para evitar NameError
         df_cri = df_cri[df_cri["Invest_card"] > 0].copy().reset_index(drop=True)
-        # Preencher colunas de métricas nas linhas sem investimento
-        for _col in ["Cliques_Meta_card","ROI","Receita","CAC","RPC","CPC","CTR"]:
-            df_cri_sem_inv[_col] = np.nan
 
-        if df_cri.empty and df_cri_sem_inv.empty:
+        if df_cri.empty:
             st.markdown(
                 '<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;'
                 'padding:14px 16px;color:#c5936d;font-size:13px;">'
-                'Sem criativos no período seleccionado.</div>',
+                'Sem criativos com investimento no período seleccionado.</div>',
                 unsafe_allow_html=True
             )
         else:
             # Recalcular proporções com índices limpos
-            tot_clq2 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum") if not df_cri.empty else pd.Series(dtype=float)
+            tot_clq2 = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
             df_cri["Cliques_Meta_card"] = (df_cri["Cliques_Meta"] * df_cri["Cliques_Shopee"].div(tot_clq2.replace(0, np.nan))).fillna(0)
 
             df_cri["ROI"]     = (df_cri["Comissao"] - df_cri["Invest_card"]) / df_cri["Invest_card"]
@@ -1482,9 +1479,6 @@ def main():
                 roi     = row["ROI"]
                 cliques = row["Cliques_Shopee"]
                 n_dias  = row["N_dias"]
-                invest  = row["Invest_card"]
-                if invest == 0 or pd.isna(invest):
-                    return ("\u26a0\ufe0f Sem invest.", "#6a5a52", "#161210")
                 if n_dias < MIN_DIAS or pd.isna(roi):
                     return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
                 if roi > 1:
@@ -1495,14 +1489,9 @@ def main():
                     return ("\U0001f534 Pausar", "#c0392b", "#1f0808")
                 return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
 
-            # Juntar: com investimento (ordenados) + sem investimento (no fim)
             df_cri["_badge"]    = df_cri.apply(badge_decisao_cri, axis=1)
             df_cri["_roi_sort"] = df_cri["ROI"].fillna(-999)
             df_cri = df_cri.sort_values(["Sub_id1","_roi_sort"], ascending=[True, False]).reset_index(drop=True)
-            if not df_cri_sem_inv.empty:
-                df_cri_sem_inv["_badge"]    = [("\u26a0\ufe0f Sem invest.", "#6a5a52", "#161210")] * len(df_cri_sem_inv)
-                df_cri_sem_inv["_roi_sort"] = -9999
-                df_cri = pd.concat([df_cri, df_cri_sem_inv], ignore_index=True)
 
             GRID = "1.4fr 1.3fr 0.8fr 0.9fr 0.7fr 0.85fr 0.85fr 0.75fr 0.8fr 0.8fr 0.65fr 0.85fr 1.15fr"
 
