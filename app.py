@@ -9,7 +9,7 @@ import requests
 import numpy as np
 
 SPREADSHEET_ID  = "1qhdazuPU5B36vwRyc8Be3h9fgXok1dSuDT8mvMBD2eI"
-SHEET_NAME      = "Resultados Shopee"
+SHEET_NAME      = "Página1"
 SHEET_PAGO      = "Resultados Pago"
 SHEET_AWARENESS = "Resultado Awareness"
 SHEET_HORARIO   = "Insights_Horario"
@@ -146,7 +146,7 @@ def ler_dados():
     cab=vals[0]; linhas=vals[1:]; mc=len(cab)
     ln=[l+[""]*(mc-len(l)) for l in linhas]
     df=pd.DataFrame(ln,columns=cab)
-    nomes=["Data","Sub_id2","Sub_id1","Sub_id3","Cliques","Vendas","CTR","Comissao","Sub_id4"]
+    nomes=["Data","Sub_id2","Sub_id1","Cliques","Vendas","CTR","Comissao","Sub_id3","Sub_id4"]
     df=df.rename(columns={df.columns[i]:nomes[i] for i in range(min(len(df.columns),len(nomes)))})
     for col in ["Cliques","Vendas","Comissao"]: df[col]=df[col].apply(parse_num)
     df["Data"]=pd.to_datetime(df["Data"],errors="coerce")
