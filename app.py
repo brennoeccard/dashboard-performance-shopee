@@ -1234,9 +1234,11 @@ def main():
             "sid2": [], "sid1": [], "sid3": []
         }
 
-    _exp_open = st.session_state.pop("_filtros_expander_open", None)
-    _exp_default = False if _exp_open is False else False
-    with st.expander("🎛️ Filtros", expanded=_exp_default):
+    # Expander: aberto por defeito, fecha após aplicar filtros
+    _filtros_aberto = st.session_state.get("_filtros_expander_open", False)
+    if "_filtros_expander_open" in st.session_state:
+        del st.session_state["_filtros_expander_open"]
+    with st.expander("🎛️ Filtros", expanded=_filtros_aberto):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
         b1,b2,b3,b4,b5,b6 = st.columns(6)
         with b1:
@@ -1275,12 +1277,12 @@ def main():
                 st.session_state.preset = "7d"
                 st.rerun()
         with bcol2:
-            if st.button("Aplicar ↵", use_container_width=True, type="primary", key="btn_aplicar"):
+            if st.button("🔍 Aplicar", use_container_width=True, type="primary", key="btn_aplicar"):
                 st.session_state.filtros_aplicados = {
                     "d_ini": d_ini_widget, "d_fim": d_fim_widget,
                     "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
                 }
-                st.session_state["_filtros_expander_open"] = False
+                # Não setar _filtros_expander_open → expander fecha (expanded=False por omissão)
                 st.rerun()
 
     # Ler filtros do estado aplicado (não dos widgets directamente)
