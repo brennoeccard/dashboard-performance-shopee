@@ -1440,13 +1440,16 @@ def main():
     with r4:
         roi_g=m["roi"]; cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
         comissao_ant=mv.get("comissao",0); roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
-        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"))
+        _roi_med = df_daily["ROI_calc"][df_daily["Investimento"]>0].mean() if (df_daily["Investimento"]>0).any() else 0
+        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"),avg_label="média/dia",avg_value="{:.2f}".format(_roi_med))
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
     with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"),avg_label="média/dia",avg_value=fmt_num(int(m["cliques"]/n_dias_sel)))
     with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"),avg_label="média/dia",avg_value=fmt_num(int(m["vendas"]/n_dias_sel)))
-    with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"))
-    with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"))
+    _ctr_med = df_daily["CTR_calc"][df_daily["CTR_calc"]>0].mean() if (df_daily["CTR_calc"]>0).any() else 0
+    with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"),avg_label="média/dia",avg_value=fmt_pct(_ctr_med))
+    _tk_med = df_daily["Ticket_Medio"][df_daily["Ticket_Medio"]>0].mean() if (df_daily["Ticket_Medio"]>0).any() else 0
+    with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(_tk_med))
 
     st.markdown('<div class="section-title">📂 Performance por Canal</div>',unsafe_allow_html=True)
     cc1,cc2,cc3=st.columns(3)
