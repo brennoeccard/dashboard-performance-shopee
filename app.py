@@ -1223,11 +1223,16 @@ def main():
     elif p=="30d":  d_ini_def=max(ref-timedelta(days=29),data_min)
     else:           d_ini_def=data_min
     d_fim_def=ontem
-    # ── STEP 1: opções dos dropdowns — geradas do histórico completo ───
-    # (não do período seleccionado, para evitar dropdowns vazios ao mudar datas)
     sid2_opts = sorted([x for x in df_raw["Sub_id2"].unique() if str(x).strip()])
     sid1_opts = sorted([x for x in df_raw["Sub_id1"].unique() if str(x).strip()])
     sid3_opts = sorted([x for x in df_raw["Sub_id3"].unique() if str(x).strip()])
+
+    # Inicializar estado dos filtros aplicados (separado dos widgets)
+    if "filtros_aplicados" not in st.session_state:
+        st.session_state.filtros_aplicados = {
+            "d_ini": d_ini_def, "d_fim": d_fim_def,
+            "sid2": [], "sid1": [], "sid3": []
+        }
 
     with st.expander("🎛️ Filtros", expanded=False):
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Periodo</div>', unsafe_allow_html=True)
@@ -1245,39 +1250,71 @@ def main():
         with b6:
             if st.button("Tudo",    use_container_width=True, key="ba"):  st.session_state.preset="all";   st.rerun()
         datas = st.date_input("", value=(d_ini_def, d_fim_def), min_value=data_min, max_value=hoje, label_visibility="collapsed")
-        d_ini, d_fim = (datas if isinstance(datas, tuple) and len(datas) == 2 else (d_ini_def, d_fim_def))
+        d_ini_widget, d_fim_widget = (datas if isinstance(datas, tuple) and len(datas) == 2 else (d_ini_def, d_fim_def))
 
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Canal (Sub_id2)</div>', unsafe_allow_html=True)
-        sid2_sel = st.multiselect("", sid2_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms2")
+        sid2_widget = st.multiselect("", sid2_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms2")
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id1</div>', unsafe_allow_html=True)
-        sid1_sel = st.multiselect("", sid1_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms1")
+        sid1_widget = st.multiselect("", sid1_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms1")
         st.markdown("<hr style='border-color:#3a2c28;margin:10px 0;'>", unsafe_allow_html=True)
         st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Sub_id3</div>', unsafe_allow_html=True)
-        sid3_sel = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms3")
+        sid3_widget = st.multiselect("", sid3_opts, default=[], placeholder="Todos", label_visibility="collapsed", key="ms3")
 
-    # ── STEP 2: converter selecções vazias em "todos" usando sets ─────────
-    sid2_activo = set(sid2_sel) if sid2_sel else None
-    sid1_activo = set(sid1_sel) if sid1_sel else None
-    sid3_activo = set(sid3_sel) if sid3_sel else None
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        col_apply, col_reset = st.columns([2, 1])
+        with col_apply:
+            if st.button("🔍 Aplicar Filtros", use_container_width=True, type="primary", key="btn_aplicar"):
+                st.session_state.filtros_aplicados = {
+                    "d_ini": d_ini_widget, "d_fim": d_fim_widget,
+                    "sid2": sid2_widget, "sid1": sid1_widget, "sid3": sid3_widget
+                }
+                st.rerun()
+        with col_reset:
+            if st.button("✕ Limpar", use_container_width=True, key="btn_limpar"):
+                st.session_state.filtros_aplicados = {
+                    "d_ini": d_ini_def, "d_fim": d_fim_def,
+                    "sid2": [], "sid1": [], "sid3": []
+                }
+                st.session_state.preset = "7d"
+                st.rerun()
 
-    # ── STEP 3: aplicar filtros ao df_raw ─────────────────────────────────
+    # Ler filtros do estado aplicado (não dos widgets directamente)
+    fa = st.session_state.filtros_aplicados
+    d_ini, d_fim = fa["d_ini"], fa["d_fim"]
+    sid2_activo = set(fa["sid2"]) if fa["sid2"] else None
+    sid1_activo = set(fa["sid1"]) if fa["sid1"] else None
+    sid3_activo = set(fa["sid3"]) if fa["sid3"] else None
+
+    # Mostrar resumo dos filtros activos
+    filtros_activos = []
+    if sid2_activo: filtros_activos.append("Canal: " + ", ".join(sorted(sid2_activo)))
+    if sid1_activo: filtros_activos.append("Sub_id1: " + ", ".join(sorted(sid1_activo)))
+    if sid3_activo: filtros_activos.append("Sub_id3: " + ", ".join(sorted(sid3_activo)))
+    if filtros_activos:
+        st.markdown(
+            '<div style="background:#1a1210;border:1px solid #bd6d34;border-radius:8px;'
+            'padding:8px 14px;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+            '<span style="color:#bd6d34;font-size:11px;font-weight:700;">🎛️ Filtros activos:</span>'
+            + "".join(f'<span style="background:#2a1f1a;color:#f6e8d8;font-size:11px;padding:2px 8px;border-radius:10px;">{f}</span>' for f in filtros_activos)
+            + '</div>',
+            unsafe_allow_html=True
+        )
+
+    # Aplicar filtros ao df_raw
     mask = (df_raw["Data"].dt.date >= d_ini) & (df_raw["Data"].dt.date <= d_fim)
     if sid2_activo: mask = mask & df_raw["Sub_id2"].isin(sid2_activo)
     if sid1_activo: mask = mask & df_raw["Sub_id1"].isin(sid1_activo)
     if sid3_activo: mask = mask & df_raw["Sub_id3"].isin(sid3_activo)
     df = df_raw[mask].copy()
 
-    # ── STEP 4: filtrar df_pago_periodo com os mesmos critérios ──────────
-    # Sub_id2 não se aplica (planilha Pago só tem dados pagos)
-    # Sub_id3 é mapeado via Sub_id1 para cruzar com df_pago_raw
+    # Filtrar df_pago_periodo
     if not df_pago_raw.empty:
         mp = (df_pago_raw["Data"].dt.date >= d_ini) & (df_pago_raw["Data"].dt.date <= d_fim)
         if sid1_activo:
             mp = mp & df_pago_raw["Sub_id1"].isin(sid1_activo)
         if sid3_activo:
-            # Mapear Sub_id3 → Sub_id1 usando df já filtrado por data e sid3
             sid1s_do_sid3 = set(
                 df_raw[
                     (df_raw["Data"].dt.date >= d_ini) &
@@ -1289,14 +1326,19 @@ def main():
         df_pago_periodo = df_pago_raw[mp].copy()
     else:
         df_pago_periodo = pd.DataFrame()
-    if not df_aw_raw.empty:
-        _di=pd.Timestamp(d_ini).date(); _df=pd.Timestamp(d_fim).date()
-        ma=(df_aw_raw["Data"].dt.date>=_di)&(df_aw_raw["Data"].dt.date<=_df)
-        df_aw=df_aw_raw[ma].copy()
+
+    # Awareness: omitir quando há filtro de Sub_id1 ou Sub_id3 (não filtrável por campanha)
+    aw_omitido = bool(sid1_activo or sid3_activo)
+    if not aw_omitido and not df_aw_raw.empty:
+        ma = (df_aw_raw["Data"].dt.date >= d_ini) & (df_aw_raw["Data"].dt.date <= d_fim)
+        df_aw = df_aw_raw[ma].copy()
     else:
-        df_aw=pd.DataFrame()
+        df_aw = pd.DataFrame()
     if df.empty:
-        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:24px;text-align:center;"><div style="font-size:32px;">📭</div><div style="color:#f6e8d8;font-size:16px;">Sem dados para o periodo seleccionado</div><div style="color:#c5936d;font-size:13px;">Dados disponiveis ate {}.</div></div>'.format(data_max),unsafe_allow_html=True)
+        msg_filtros = " + ".join(filtros_activos) if filtros_activos else ""
+        msg = (f'Sem dados para os filtros seleccionados ({msg_filtros}).' if filtros_activos
+               else f'Sem dados para o período seleccionado. Dados disponíveis até {data_max}.')
+        st.markdown(f'<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:10px;padding:24px;text-align:center;"><div style="font-size:32px;">📭</div><div style="color:#f6e8d8;font-size:16px;">{msg}</div></div>', unsafe_allow_html=True)
         st.stop()
     import datetime as _dt
     _todas_datas=set(df_raw[(df_raw["Data"].dt.date>=d_ini)&(df_raw["Data"].dt.date<=d_fim)]["Data"].dt.date.unique())
@@ -1309,11 +1351,15 @@ def main():
         _gaps_txt=_gaps[0].strftime("%d/%m") if len(_gaps)==1 else (", ".join(d.strftime("%d/%m") for d in _gaps) if len(_gaps)<=3 else ", ".join(d.strftime("%d/%m") for d in _gaps[:3])+f" (+{len(_gaps)-3})")
         st.markdown(f'''<div style="background:#1a1210;border:1px solid #d4a017;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;"><span style="font-size:14px;">⚠️</span><span style="color:#d4a017;font-size:12px;font-weight:600;">Sem dados em: <span style="font-weight:400;">{_gaps_txt}</span> — o script pode não ter corrido nesses dias.</span></div>''',unsafe_allow_html=True)
     invest_pago=df_pago_periodo["Investimento"].sum() if not df_pago_periodo.empty else 0.0
-    invest_aw=df_aw["Investimento_aw"].sum() if not df_aw.empty else 0.0
+    # Awareness omitido quando há filtro de Sub_id1/Sub_id3 — não incluir no invest_total
+    invest_aw=df_aw["Investimento_aw"].sum() if (not df_aw.empty and not aw_omitido) else 0.0
     invest_total=invest_pago+invest_aw
     _ant_fim=pd.Timestamp(d_ini).date()-timedelta(days=1); _ant_ini=_ant_fim-timedelta(days=(d_fim-d_ini).days)
-    invest_pago_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)]["Investimento"].sum() if not df_pago_raw.empty else 0.0
-    invest_aw_ant=df_aw_raw[(df_aw_raw["Data"].dt.date>=_ant_ini)&(df_aw_raw["Data"].dt.date<=_ant_fim)]["Investimento_aw"].sum() if not df_aw_raw.empty else 0.0
+    # Período anterior: respeitar os mesmos filtros de Sub_id1
+    _pago_raw_ant=df_pago_raw[(df_pago_raw["Data"].dt.date>=_ant_ini)&(df_pago_raw["Data"].dt.date<=_ant_fim)] if not df_pago_raw.empty else pd.DataFrame()
+    if sid1_activo and not _pago_raw_ant.empty: _pago_raw_ant=_pago_raw_ant[_pago_raw_ant["Sub_id1"].isin(sid1_activo)]
+    invest_pago_ant=_pago_raw_ant["Investimento"].sum() if not _pago_raw_ant.empty else 0.0
+    invest_aw_ant=(df_aw_raw[(df_aw_raw["Data"].dt.date>=_ant_ini)&(df_aw_raw["Data"].dt.date<=_ant_fim)]["Investimento_aw"].sum() if (not df_aw_raw.empty and not aw_omitido) else 0.0)
     invest_total_ant=invest_pago_ant+invest_aw_ant
     m=calcular(df); m["invest"]=invest_pago; m["invest_total"]=invest_total; m["lucro"]=m["comissao"]-invest_total; m["roi"]=(m["comissao"]-invest_total)/invest_total if invest_total>0 else 0
     if not df_pago_periodo.empty:
@@ -1607,7 +1653,9 @@ def main():
             )
 
     else:
-        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">Sem dados de campanha paga para o periodo seleccionado.</div>',unsafe_allow_html=True)
+        msg_pago = ('Sem dados de campanha paga para os filtros seleccionados.' if filtros_activos
+                   else 'Sem dados de campanha paga para o período seleccionado.')
+        st.markdown(f'<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{msg_pago}</div>', unsafe_allow_html=True)
 
     st.markdown('<div id="awareness" class="section-title">📡 Campanha Awareness</div>',unsafe_allow_html=True)
     if not df_aw.empty:
@@ -1655,8 +1703,14 @@ def main():
             cv_cor,cv_txt=corr_badge(corr_v); cl_cor,cl_txt=corr_badge(corr_l)
             st.markdown('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;"><div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Awareness -> Vendas Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:10px;">— {}</span></div><div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:10px 14px;"><span style="color:#c5936d;font-size:11px;">Awareness -> Lucro Org/Story (lag 3d): </span><span style="color:{};font-size:14px;font-weight:700;">{:.2f}</span> <span style="color:#c5936d;font-size:10px;">— {}</span></div></div>'.format(cv_cor,corr_v,cv_txt,cl_cor,corr_l,cl_txt),unsafe_allow_html=True)
     else:
-        n=len(df_aw_raw) if not df_aw_raw.empty else 0
-        st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format("Sem dados na aba Resultado Awareness." if n==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n)),unsafe_allow_html=True)
+        if aw_omitido:
+            st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:14px 16px;color:#c5936d;font-size:13px;">'
+                '⚠️ Dados de Awareness omitidos — a campanha de Awareness não está associada a Sub_id1 ou Sub_id3 específicos, '
+                'por isso não é possível filtrá-la por campanha. Remova os filtros de Sub_id1/Sub_id3 para ver o Awareness.'
+                '</div>', unsafe_allow_html=True)
+        else:
+            n=len(df_aw_raw) if not df_aw_raw.empty else 0
+            st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:16px;text-align:center;color:#c5936d;">{}</div>'.format("Sem dados na aba Resultado Awareness." if n==0 else "Sem dados de Awareness para este periodo ({} linhas totais).".format(n)),unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown('<div id="cruzamento" class="section-title">🔀 Cruzamento de Metricas</div>',unsafe_allow_html=True)
