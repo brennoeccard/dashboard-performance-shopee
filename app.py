@@ -1586,7 +1586,7 @@ def main():
             df_cri["ROI"]     = (df_cri["Comissao"] - df_cri["Invest_card"]) / df_cri["Invest_card"]
             df_cri["Receita"] = df_cri["Comissao"] - df_cri["Invest_card"]
             df_cri["CAC"]     = df_cri["Invest_card"].div(df_cri["Vendas"].replace(0, np.nan)).fillna(0)
-            df_cri["RPC"]     = df_cri["Comissao"].div(df_cri["Cliques_Shopee"].replace(0, np.nan)).fillna(0)
+            df_cri["RPC"]     = df_cri["Comissao"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
             df_cri["CPC"]     = df_cri["Invest_card"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
             df_cri["CTR"]     = (df_cri["Cliques_Shopee"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan))).fillna(0) * 100
 
