@@ -1837,7 +1837,7 @@ def main():
     ipa_col="Sub_id1" if "Sub_id1" in ipa_modo else "Sub_id3"
     ipa_other="Sub_id3" if ipa_col=="Sub_id1" else "Sub_id1"
     # Para calcular Pedidos precisamos contar linhas únicas (cada linha = 1 pedido/dia distinto)
-    df_org=df[df["Sub_id2"].isin(["organico","story"])].copy()
+    df_org=df[df["Sub_id2"]=="organico"].copy()
     # Pedidos = numero de linhas (registos) distintos por grupo — proxy para diversidade de pedidos
     df_ipa_ped=df_org.groupby([ipa_col,ipa_other]).agg(
         Comissao=("Comissao","sum"),
