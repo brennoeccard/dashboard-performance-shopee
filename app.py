@@ -1913,19 +1913,6 @@ def main():
     df_t=df_t.sort_values("Comissao",ascending=False).reset_index(drop=True)
     busca=st.text_input("🔍 Pesquisar",placeholder="Ex: pago, 260302fronha...",key="busca")
     if busca: df_t=df_t[df_t.apply(lambda r:busca.lower() in str(r).lower(),axis=1)]
-    # Linha de resumo
-    r_cliques=int(df_t["Cliques"].sum()); r_vendas=int(df_t["Vendas"].sum()); r_comissao=df_t["Comissao"].sum()
-    r_ctr=(r_vendas/r_cliques*100) if r_cliques>0 else 0.0; r_ticket=(r_comissao/r_vendas) if r_vendas>0 else 0.0
-    st.markdown(
-        '<div style="display:flex;gap:24px;background:#1a1210;border:1px solid #bd6d34;border-radius:8px;padding:10px 16px;margin-bottom:8px;flex-wrap:wrap;">'
-        '<span style="color:#c5936d;font-size:11px;text-transform:uppercase;letter-spacing:1px;">Resumo ({} linhas)</span>'
-        '<span style="color:#f6e8d8;font-size:12px;">🖱️ <b>{:,}</b> cliques</span>'
-        '<span style="color:#f6e8d8;font-size:12px;">🛒 <b>{:,}</b> vendas</span>'
-        '<span style="color:#f6e8d8;font-size:12px;">💰 <b>R$ {:,.2f}</b> comissão</span>'
-        '<span style="color:#f6e8d8;font-size:12px;">📊 CTR <b>{:.1f}%</b></span>'
-        '<span style="color:#f6e8d8;font-size:12px;">🎫 Ticket <b>R$ {:.2f}</b></span>'
-        '</div>'.format(len(df_t),r_cliques,r_vendas,r_comissao,r_ctr,r_ticket),
-        unsafe_allow_html=True)
     # Formatar colunas sem decimais desnecessários
     df_disp=df_t.copy()
     df_disp["Cliques"]=df_disp["Cliques"].apply(lambda x:int(x) if x==int(x) else x)
@@ -1934,6 +1921,11 @@ def main():
     df_disp["CTR"]=df_disp["CTR"].apply(lambda x:"{:.1f}%".format(x))
     df_disp["Ticket"]=df_disp["Ticket"].apply(lambda x:"R$ {:.2f}".format(x))
     st.dataframe(df_disp,use_container_width=True,height=400)
+    # Linha de resumo alinhada abaixo da tabela
+    r_cliques=int(df_t["Cliques"].sum()); r_vendas=int(df_t["Vendas"].sum()); r_comissao=df_t["Comissao"].sum()
+    r_ctr=(r_vendas/r_cliques*100) if r_cliques>0 else 0.0; r_ticket=(r_comissao/r_vendas) if r_vendas>0 else 0.0
+    df_resumo=pd.DataFrame([{"Data":"","Sub_id2":"","Sub_id1":f"∑ {len(df_t)} linhas","Sub_id3":"","Cliques":r_cliques,"Vendas":r_vendas,"Comissao":"R$ {:.2f}".format(r_comissao),"CTR":"{:.1f}%".format(r_ctr),"Ticket":"R$ {:.2f}".format(r_ticket)}])
+    st.dataframe(df_resumo,use_container_width=True,hide_index=True,height=58)
     html_r="<html><body><h1>Relatorio Matiq </h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
     st.download_button("📥 Download HTML",data=html_r.encode("utf-8"),file_name="relatorio_{}_{}.html".format(d_ini,d_fim),mime="text/html",key="dl_btn")
 
