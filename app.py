@@ -1927,16 +1927,14 @@ def main():
     r_cliques=int(df_t["Cliques"].sum()); r_vendas=int(df_t["Vendas"].sum()); r_comissao=df_t["Comissao"].sum()
     r_ctr=(r_vendas/r_cliques*100) if r_cliques>0 else 0.0; r_ticket=(r_comissao/r_vendas) if r_vendas>0 else 0.0
     st.markdown(
-        '<div style="display:grid;grid-template-columns:40px 100px 90px 130px 160px 80px 70px 110px 80px 100px;'
-        'gap:0;background:linear-gradient(135deg,#1e2a14,#243018);border:1px solid #7a9e4e;border-radius:0 0 8px 8px;'
-        'padding:8px 12px;align-items:center;margin-top:-6px;">'
-        '<div style="color:#7a9e4e;font-size:10px;font-weight:700;">∑</div>'
-        '<div style="color:#7a9e4e;font-size:10px;font-weight:600;grid-column:span 4;">RESUMO &nbsp;·&nbsp; {} linhas</div>'
-        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🖱 {:,}</div>'
-        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🛒 {:,}</div>'
-        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">💰 R$ {:.2f}</div>'
-        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">📊 {:.1f}%</div>'
-        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🎫 R$ {:.2f}</div>'
+        '<div style="display:flex;justify-content:flex-end;gap:20px;background:#1a1410;border:1px solid #3a2c28;'
+        'border-radius:0 0 6px 6px;padding:7px 16px;margin-top:-6px;flex-wrap:wrap;align-items:center;">'
+        '<span style="color:#c5936d;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-right:auto;">∑ {} linhas</span>'
+        '<span style="color:#c5936d;font-size:11px;">🖱 Cliques <b style="color:#f6e8d8;">{:,}</b></span>'
+        '<span style="color:#c5936d;font-size:11px;">🛒 Vendas <b style="color:#f6e8d8;">{:,}</b></span>'
+        '<span style="color:#c5936d;font-size:11px;">💰 Comissão <b style="color:#f6e8d8;">R$ {:.2f}</b></span>'
+        '<span style="color:#c5936d;font-size:11px;">📊 CTR <b style="color:#f6e8d8;">{:.1f}%</b></span>'
+        '<span style="color:#c5936d;font-size:11px;">🎫 Ticket <b style="color:#f6e8d8;">R$ {:.2f}</b></span>'
         '</div>'.format(len(df_t),r_cliques,r_vendas,r_comissao,r_ctr,r_ticket),
         unsafe_allow_html=True)
     html_r="<html><body><h1>Relatorio Matiq </h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
