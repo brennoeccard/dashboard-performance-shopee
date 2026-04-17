@@ -1495,42 +1495,33 @@ def main():
             imp_p_ant=_mp_ant["Impressoes"].sum(); alc_p_ant=_mp_ant["Alcance"].sum(); clq_p_ant=_mp_ant["Cliques_Meta"].sum(); inv_p_ant=_mp_ant["Investimento"].sum()
         else: imp_p_ant=alc_p_ant=clq_p_ant=inv_p_ant=0
         vnd_med=m_pago["vendas"]/n_dias_p; com_med=m_pago["comissao"]/n_dias_p; inv_med=invest_pago/n_dias_p
-        def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
+        def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color,bot_is_cost=False):
             with col:
-                st.markdown(
-                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
-                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
-                    '</div>'
-                    '<div class="metric-card {c}" style="opacity:0.85;">'
-                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{bl}</span>'
-                    '<span style="color:#c5936d;font-size:13px;font-weight:500;">{bv}</span>'
-                    '</div>{bd}'
-                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
-                    unsafe_allow_html=True)
+                card(top_label,top_val,color,top_delta,avg_label=bot_label,avg_value=bot_val+((" "+bot_delta) if bot_is_cost and bot_delta else ""))
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
         n_dias_p_ant=max(len(df_ant_pago["Data"].unique()),1) if not df_ant_pago.empty else 1
         vnd_med_a=(mp.get("vendas",0)/n_dias_p_ant); com_med_a=(mp.get("comissao",0)/n_dias_p_ant); inv_med_a=invest_pago_ant/n_dias_p_ant
-        ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),delta_html(vnd_med,vnd_med_a),"purple")
-        ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),delta_html(com_med,com_med_a),"blue")
+        ppair(k1,"Vendas",fmt_num(m_pago["vendas"]),delta_html(m_pago["vendas"],mp.get("vendas",0)),"Media/dia",fmt_num(int(vnd_med)),"","purple")
+        ppair(k2,"Comissao",fmt_brl(m_pago["comissao"]),delta_html(m_pago["comissao"],mp.get("comissao",0)),"Media/dia",fmt_brl(com_med),"","blue")
         lucro_med=lucro_camp/n_dias_p; _pago_comissao_ant=df_ant[df_ant["Sub_id2"]=="pago"]["Comissao"].sum() if not df_ant.empty else 0
         lucro_camp_ant=(_pago_comissao_ant-invest_pago_ant) if invest_pago_ant>0 else None
         lucro_med_ant=(lucro_camp_ant/n_dias_p_ant) if lucro_camp_ant is not None else None
-        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),delta_html(lucro_med,lucro_med_ant if lucro_med_ant is not None else None),cor_roi)
-        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),delta_html(inv_med,inv_med_a),"red")
+        ppair(k3,"Lucro",fmt_brl(lucro_camp),delta_html(lucro_camp,lucro_camp_ant),"Lucro/dia",fmt_brl(lucro_med),"",cor_roi)
+        ppair(k4,"Investimento",fmt_brl(invest_pago),delta_html(invest_pago,invest_pago_ant),"Invest./dia",fmt_brl(inv_med),"","red")
         roi_v=m_pago["roi"]; roi_cor="roi-red" if roi_v<0 else ("roi-yellow" if roi_v<1 else "roi-green")
         roi_camp_ant=(_pago_comissao_ant-invest_pago_ant)/invest_pago_ant if invest_pago_ant>0 else None
-        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0,inverted=True),roi_cor)
+        cac_ant=(invest_pago_ant/mp.get("vendas",1)) if mp.get("vendas",0)>0 else 0
+        ppair(k5,"ROI","{:.2f}".format(roi_v),delta_html(roi_v,roi_camp_ant),"CAC",fmt_brl(m_pago.get("cac",0)),delta_html(m_pago.get("cac",0),cac_ant,inverted=True),roi_cor,bot_is_cost=True)
         with k5: st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-4px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:12px 0 4px 0;">CAMPANHA</div>',unsafe_allow_html=True)
         k6,k7,k8,k9=st.columns(4)
         cpm_ant=(inv_p_ant/imp_p_ant*1000) if imp_p_ant>0 else 0; cpm_alc_ant=(inv_p_ant/alc_p_ant*1000) if alc_p_ant>0 else 0
         cpc_ant=inv_p_ant/clq_p_ant if clq_p_ant>0 else 0; ctr_meta_ant=(clq_p_ant/alc_p_ant*100) if alc_p_ant>0 else 0; freq_ant_p=(imp_p_ant/alc_p_ant) if alc_p_ant>0 else 0
-        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant,inverted=True),"yellow")
-        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant,inverted=True),"yellow")
-        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant,inverted=True),"orange")
-        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue")
+        ppair(k6,"Impressoes",fmt_num(int(m_pago.get("impressoes",0))),delta_html(m_pago.get("impressoes",0),imp_p_ant),"CPM",fmt_brl(m_pago.get("cpm_imp",0)),delta_html(m_pago.get("cpm_imp",0),cpm_ant,inverted=True),"yellow",bot_is_cost=True)
+        ppair(k7,"Alcance",fmt_num(int(m_pago.get("alcance",0))),delta_html(m_pago.get("alcance",0),alc_p_ant),"CPM Alcance",fmt_brl(m_pago.get("cpm_alc",0)),delta_html(m_pago.get("cpm_alc",0),cpm_alc_ant,inverted=True),"yellow",bot_is_cost=True)
+        ppair(k8,"Cliques Meta",fmt_num(int(m_pago.get("cliques_meta",0))),delta_html(m_pago.get("cliques_meta",0),clq_p_ant),"CPC",fmt_brl(m_pago.get("cpc",0)),delta_html(m_pago.get("cpc",0),cpc_ant,inverted=True),"orange",bot_is_cost=True)
+        ppair(k9,"CTR Meta",fmt_pct(m_pago.get("ctr_meta",0)),delta_html(m_pago.get("ctr_meta",0),ctr_meta_ant),"Frequencia","{:.2f}x".format(m_pago.get("freq",0)),delta_html(m_pago.get("freq",0),freq_ant_p),"blue",bot_is_cost=True)
         if not df_pago_periodo.empty:
             st.markdown('<div style="color:#c5936d;font-size:12px;font-weight:600;margin:12px 0 6px 0;">📈 Evolucao Metricas Campanha</div>',unsafe_allow_html=True)
             df_pd=df_pago_periodo.groupby("Data").agg(Investimento=("Investimento","sum"),Impressoes=("Impressoes","sum"),Alcance=("Alcance","sum"),Cliques_Meta=("Cliques_Meta","sum")).reset_index()
@@ -1726,27 +1717,17 @@ def main():
         cpm_a=(inv_a/imp_a*1000) if imp_a>0 else 0; cpa_a=(inv_a/vis_a) if vis_a>0 else 0; cps_a=(inv_a/seg_a) if seg_a>0 else 0; cpc_a=(inv_a/com_a) if com_a>0 else 0
         alc_a=df_aw_ant["Alcance_aw"].sum() if not df_aw_ant.empty else 0; freq_a=(imp_a/alc_a) if alc_a>0 else 0
         n_dias_aw=len(df_aw["Data"].unique()) or 1; inv_aw_med=inv_aw_s/n_dias_aw; inv_aw_med_a=(inv_a/len(df_aw_ant["Data"].unique())) if not df_aw_ant.empty and len(df_aw_ant["Data"].unique())>0 else 0
-        def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
+        def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color,bot_is_cost=False):
             with col:
-                st.markdown(
-                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
-                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
-                    '</div>'
-                    '<div class="metric-card {c}" style="opacity:0.85;">'
-                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{bl}</span>'
-                    '<span style="color:#c5936d;font-size:13px;font-weight:500;">{bv}</span>'
-                    '</div>{bd}'
-                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
-                    unsafe_allow_html=True)
+                card(top_label,top_val,color,top_delta,avg_label=bot_label,avg_value=bot_val+((" "+bot_delta) if bot_is_cost and bot_delta else ""))
         aw1,aw2,aw3=st.columns(3)
-        pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
-        pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a,inverted=True),"yellow")
-        pair(aw3,"Alcance",fmt_num(int(alc_aw)),delta_html(alc_aw,alc_a),"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,freq_a),"orange")
+        pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),"","red")
+        pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a,inverted=True),"yellow",bot_is_cost=True)
+        pair(aw3,"Alcance",fmt_num(int(alc_aw)),delta_html(alc_aw,alc_a),"Frequencia","{:.2f}x".format(freq_aw),delta_html(freq_aw,freq_a),"orange",bot_is_cost=True)
         aw4,aw5,aw6=st.columns(3)
-        pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a,inverted=True),"purple")
-        pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a,inverted=True),"green")
-        pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a,inverted=True),"blue")
+        pair(aw4,"Visitas ao Perfil",fmt_num(int(vis_aw)),delta_html(vis_aw,vis_a),"Custo/Visita",fmt_brl(cpa_aw),delta_html(cpa_aw,cpa_a,inverted=True),"purple",bot_is_cost=True)
+        pair(aw5,"Seguidores",fmt_num(int(seg_aw)),delta_html(seg_aw,seg_a),"Custo/Seguidor",fmt_brl(cps_aw),delta_html(cps_aw,cps_a,inverted=True),"green",bot_is_cost=True)
+        pair(aw6,"Comentarios",fmt_num(int(com_aw)),delta_html(com_aw,com_a),"Custo/Comentario",fmt_brl(cpc_aw),delta_html(cpc_aw,cpc_a,inverted=True),"blue",bot_is_cost=True)
         df_aw_d=df_aw.groupby("Data").agg(Invest=("Investimento_aw","sum"),Impressoes=("Impressoes_aw","sum"),Visitas=("Visitas_Perfil","sum"),Seguidores=("Seguidores","sum"),Comentarios=("Comentarios","sum")).reset_index()
         df_aw_d["CPM"]=(df_aw_d["Invest"]/df_aw_d["Impressoes"]*1000).replace([np.inf,np.nan],0)
         df_aw_d["CPA"]=(df_aw_d["Invest"]/df_aw_d["Visitas"]).replace([np.inf,np.nan],0)
