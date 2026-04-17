@@ -1808,11 +1808,11 @@ def main():
     with ic_c2: ic_modo=st.radio("Agrupar por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ic_modo",horizontal=True,label_visibility="collapsed")
     ic_col="Sub_id1" if "Sub_id1" in ic_modo else "Sub_id3"
     df_ic_base=df[df[ic_col]!=""].groupby(ic_col).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
-    df_ic_base["CTR"]=(df_ic_base["Vendas"]/df_ic_base["Cliques"]*100).fillna(0)
+    df_ic_base["Ticket"]=(df_ic_base["Comissao"]/df_ic_base["Vendas"]).fillna(0)
     col1,col2=st.columns(2)
     with col1:
         t5=df_ic_base.nlargest(5,"Comissao").sort_values("Comissao",ascending=True)
-        t5["lbl"]=t5.apply(lambda r:"R$ {:,.2f} | {:,.0f} vendas | CTR {:.1f}%".format(r["Comissao"],r["Vendas"],r["CTR"]),axis=1)
+        t5["lbl"]=t5.apply(lambda r:"R$ {:,.2f} | {:,.0f} vendas".format(r["Comissao"],r["Vendas"]),axis=1)
         fig=px.bar(t5,x="Comissao",y=ic_col,orientation="h",title="Top 5 por Comissao",text="lbl",color_discrete_sequence=["#9c5834"])
         fig.update_traces(textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
     with col2:
@@ -1825,30 +1825,27 @@ def main():
         fig=px.bar(t5c,x="Cliques",y=ic_col,orientation="h",title="Top 5 por Cliques",text="Cliques",color_discrete_sequence=["#d2b095"])
         fig.update_traces(texttemplate="%{text:.0f}",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
     with col4:
-        t5ctr=df_ic_base.nlargest(5,"CTR").sort_values("CTR",ascending=True)
-        fig=px.bar(t5ctr,x="CTR",y=ic_col,orientation="h",title="Top 5 por CTR",text="CTR",color_discrete_sequence=["#bd6d34"])
-        fig.update_traces(texttemplate="%{text:.2f}%",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
+        # Ticket Medio: mais robusto que CTR (imune a volume baixo de cliques)
+        t5tkt=df_ic_base[df_ic_base["Vendas"]>=2].nlargest(5,"Ticket").sort_values("Ticket",ascending=True)
+        fig=px.bar(t5tkt,x="Ticket",y=ic_col,orientation="h",title="Top 5 por Ticket Medio",text="Ticket",color_discrete_sequence=["#bd6d34"])
+        fig.update_traces(texttemplate="R$ %{text:.2f}",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
     st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>',unsafe_allow_html=True)
-    st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;color:#c5936d;font-size:12px;">O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo. Score 0-100. <b style="color:#c0392b;">N/A</b> = menos de 3 vendas. O score penaliza criativos com muitas vendas concentradas em poucos pedidos (ex: 3 vendas num unico pedido valem menos que 3 vendas em 3 pedidos distintos).</div>',unsafe_allow_html=True)
+    st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;color:#c5936d;font-size:12px;">O <b style="color:#f6e8d8;">IPA</b> é uma fórmula exclusiva MATIQ que identifica criativos com maior potencial para anúncio. Utilize janelas temporais superiores a <b style="color:#f6e8d8;">7 dias</b> para resultados mais consistentes — períodos curtos podem resultar em <b style="color:#c0392b;">N/A</b>.</div>',unsafe_allow_html=True)
     ipa_c1,ipa_c2=st.columns([3,1])
     with ipa_c1: st.markdown('<span style="color:#c5936d;font-size:12px;">Agrupamento para o IPA</span>',unsafe_allow_html=True)
     with ipa_c2: ipa_modo=st.radio("IPA por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ipa_modo",horizontal=True,label_visibility="collapsed")
     ipa_col="Sub_id1" if "Sub_id1" in ipa_modo else "Sub_id3"
     ipa_other="Sub_id3" if ipa_col=="Sub_id1" else "Sub_id1"
-    # Para calcular Pedidos precisamos contar linhas únicas (cada linha = 1 pedido/dia distinto)
     df_org=df[df["Sub_id2"]=="organico"].copy()
-    # Pedidos = numero de linhas (registos) distintos por grupo — proxy para diversidade de pedidos
     df_ipa_ped=df_org.groupby([ipa_col,ipa_other]).agg(
         Comissao=("Comissao","sum"),
         Vendas=("Vendas","sum"),
         Cliques=("Cliques","sum"),
-        Pedidos=("Vendas","count")  # contagem de linhas = registos de pedidos distintos
+        Pedidos=("Vendas","count")
     ).reset_index()
     df_ipa_ped["CTR"]=(df_ipa_ped["Vendas"]/df_ipa_ped["Cliques"]*100).fillna(0)
     df_ipa_ped["Ticket"]=(df_ipa_ped["Comissao"]/df_ipa_ped["Vendas"]).fillna(0)
-    # Ratio de diversidade de pedidos: Pedidos/Vendas — quanto mais próximo de 1, mais pedidos distintos
-    # Normalizado depois como fator de qualidade do score
     df_v=df_ipa_ped[df_ipa_ped["Vendas"]>=3].copy()
     if not df_v.empty:
         for col in ["Comissao","Vendas","Ticket","CTR"]:
