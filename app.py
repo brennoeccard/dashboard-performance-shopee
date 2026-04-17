@@ -1837,13 +1837,39 @@ def main():
     with ipa_c2: ipa_modo=st.radio("IPA por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ipa_modo",horizontal=True,label_visibility="collapsed")
     ipa_col="Sub_id1" if "Sub_id1" in ipa_modo else "Sub_id3"
     ipa_other="Sub_id3" if ipa_col=="Sub_id1" else "Sub_id1"
+    # Pedidos reais via Insights_Categoria: cada linha = 1 pedido, Qtd = vendas
+    dc_raw=ler_categoria()
+    if not dc_raw.empty:
+        dc_ipa=dc_raw[
+            (dc_raw["Sub_id2"]=="organico") &
+            (dc_raw["Sub_id1"]!="") & (dc_raw["Sub_id3"]!="")
+        ].copy()
+        # Filtrar pelo mesmo período
+        if "Hora_Pedido" in dc_ipa.columns:
+            dc_ipa["_data"]=pd.to_datetime(dc_ipa["Hora_Pedido"],errors="coerce").dt.date
+        else:
+            # fallback: sem data disponível, usar tudo
+            dc_ipa["_data"]=None
+        if dc_ipa["_data"].notna().any():
+            dc_ipa=dc_ipa[(dc_ipa["_data"]>=d_ini)&(dc_ipa["_data"]<=d_fim)]
+        df_pedidos=dc_ipa.groupby([ipa_col,ipa_other]).agg(
+            Pedidos=("ID_Pedido","nunique"),
+            Vendas_cat=("Qtd","sum")
+        ).reset_index()
+    else:
+        df_pedidos=pd.DataFrame(columns=[ipa_col,ipa_other,"Pedidos","Vendas_cat"])
     df_org=df[df["Sub_id2"]=="organico"].copy()
     df_ipa_ped=df_org.groupby([ipa_col,ipa_other]).agg(
         Comissao=("Comissao","sum"),
         Vendas=("Vendas","sum"),
         Cliques=("Cliques","sum"),
-        Pedidos=("Vendas","count")
     ).reset_index()
+    # Pedidos reais: nunique de ID_Pedido via Insights_Categoria
+    if not df_pedidos.empty:
+        df_ipa_ped=df_ipa_ped.merge(df_pedidos[[ipa_col,ipa_other,"Pedidos"]],on=[ipa_col,ipa_other],how="left")
+        df_ipa_ped["Pedidos"]=df_ipa_ped["Pedidos"].fillna(0).astype(int)
+    else:
+        df_ipa_ped["Pedidos"]=0
     df_ipa_ped["CTR"]=(df_ipa_ped["Vendas"]/df_ipa_ped["Cliques"]*100).fillna(0)
     df_ipa_ped["Ticket"]=(df_ipa_ped["Comissao"]/df_ipa_ped["Vendas"]).fillna(0)
     df_v=df_ipa_ped[df_ipa_ped["Vendas"]>=3].copy()
