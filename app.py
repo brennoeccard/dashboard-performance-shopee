@@ -64,7 +64,7 @@ def fmt_brl(v): return "R$ {:,.2f}".format(v).replace(",","X").replace(".",",").
 def fmt_pct(v): return "{:.2f}%".format(v).replace(".",",")
 def fmt_num(v): return "{:,}".format(int(v)).replace(",",".")
 
-def card(label,value,color="blue",delta_html_str="",sparkline_fig=None,avg_label="",avg_value=""):
+def card(label,value,color="blue",delta_html_str="",sparkline_fig=None,avg_label="",avg_value="",_key=""):
     avg_html = (
         '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a1f1a;display:flex;justify-content:space-between;align-items:center;">'
         '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{}</span>'
@@ -72,7 +72,9 @@ def card(label,value,color="blue",delta_html_str="",sparkline_fig=None,avg_label
     ) if avg_label else ""
     html='<div class="metric-card {}"><div class="metric-label">{}</div><div class="metric-value">{}</div>{}{}</div>'.format(color,label,str(value),delta_html_str or "",avg_html)
     st.markdown(html,unsafe_allow_html=True)
-    if sparkline_fig: st.plotly_chart(sparkline_fig,use_container_width=True,config={"displayModeBar":False})
+    if sparkline_fig:
+        _k = _key if _key else label.replace(" ","_").lower()
+        st.plotly_chart(sparkline_fig,use_container_width=True,config={"displayModeBar":False},key=f"spark_{_k}")
 
 def delta_html(val,ref,inverted=False):
     if ref is None or ref==0: return '<span class="metric-delta-neu">sem ref. anterior</span>'
@@ -509,33 +511,36 @@ def render_radar_shopee():
         met_dh = st.radio("Métrica", ["🏅 Score IPA","Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                           horizontal=True, key="rs_dh_met", label_visibility="collapsed")
 
-        # toggle Total / Média — só aparece para métricas não-IPA e não-Ticket
-        # (Ticket já é uma média por natureza, IPA tem lógica própria)
-        if met_dh not in ["🏅 Score IPA","Ticket Médio (R$)"]:
-            modo_agg = st.radio(
-                "", ["📊 Total acumulado","📈 Média por semana"],
-                horizontal=True, key="rs_dh_modo", label_visibility="collapsed",
-                index=1  # default: média por semana (mais honesta)
-            )
-            usar_media = (modo_agg == "📈 Média por semana")
+        # toggle Total / Média por semana — só para métricas com volume acumulável
+        if met_dh not in ["🏅 Score IPA", "Ticket Médio (R$)"]:
+            _modo = st.radio("", ["📊 Total acumulado", "📈 Média por semana"],
+                             horizontal=True, key="rs_dh_modo", label_visibility="collapsed", index=1)
+            _usar_media = (_modo == "📈 Média por semana")
         else:
-            usar_media = True  # IPA e Ticket: sempre média
+            _usar_media = True
 
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
         dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
+
+        # coluna de semana para usar_media e IPA
+        if "Hora_Pedido" in dh_com.columns:
+            dh_com["_semana"] = dh_com["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
+                                dh_com["Hora_Pedido"].dt.year.astype(str)
+        else:
+            dh_com["_semana"] = "s1"
+
+        def _pivot_media(df_src, col_val, grp=["DiaSemana","HoraDia"]):
+            """Média por semana: agrega por semana×dia×hora, depois média das semanas."""
+            tmp = df_src.copy()
+            sem = tmp.groupby(["_semana"] + grp)[col_val].sum().reset_index(name="V")
+            return sem.groupby(grp)["V"].mean().reset_index(name="Valor")
 
         if met_dh == "🏅 Score IPA":
             def norm_s(s):
                 mn, mx = s.min(), s.max()
                 if mx > mn: return (s - mn) / (mx - mn) * 100
                 return pd.Series([50.0]*len(s), index=s.index)
-
-            if "Hora_Pedido" in dh_com.columns:
-                dh_com["_semana"] = dh_com["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
-                                    dh_com["Hora_Pedido"].dt.year.astype(str)
-            else:
-                dh_com["_semana"] = "s1"
 
             dia_grp = dh_com.groupby("DiaSemana", dropna=False)
             dia_vnd  = dia_grp["ID_Pedido"].nunique()
@@ -547,17 +552,11 @@ def render_radar_shopee():
             dia_sem  = dh_com.groupby("DiaSemana")["_semana"].nunique()
 
             dia_df = pd.DataFrame({
-                "Vendas":    dia_vnd,
-                "Comissao":  dia_com,
-                "Ticket":    dia_tkt,
-                "Cliques":   dia_clk,
-                "PctUrgente":dia_urg,
-                "N_semanas": dia_sem,
+                "Vendas":    dia_vnd, "Comissao": dia_com, "Ticket": dia_tkt,
+                "Cliques":   dia_clk, "PctUrgente": dia_urg, "N_semanas": dia_sem,
             }).fillna(0)
-
             dia_df_f = dia_df[dia_df["N_semanas"] >= 2].copy()
             if dia_df_f.empty: dia_df_f = dia_df.copy()
-
             dia_df_f["Score"] = (
                 norm_s(dia_df_f["Vendas"])     * 0.25 +
                 norm_s(dia_df_f["Comissao"])   * 0.25 +
@@ -574,21 +573,14 @@ def render_radar_shopee():
             hora_urg = dh_com.assign(Urg=(dh_com["Latencia_h"]<1).astype(float)) \
                              .groupby("HoraDia")["Urg"].mean() * 100
             hora_sem = dh_com.groupby("HoraDia")["_semana"].nunique()
-
             hora_df = pd.DataFrame({
-                "Vendas":    hora_vnd,
-                "Comissao":  hora_com,
-                "Ticket":    hora_tkt,
-                "Cliques":   hora_clk,
-                "PctUrgente":hora_urg,
-                "N_semanas": hora_sem,
+                "Vendas":    hora_vnd, "Comissao": hora_com, "Ticket": hora_tkt,
+                "Cliques":   hora_clk, "PctUrgente": hora_urg, "N_semanas": hora_sem,
             }).fillna(0)
-
             p10_vol = hora_df["Vendas"].quantile(0.10)
             hora_df_f = hora_df[hora_df["Vendas"] >= max(p10_vol, 1)].copy()
             hora_df_f2 = hora_df_f[hora_df_f["N_semanas"] >= 2].copy()
             if hora_df_f2.empty: hora_df_f2 = hora_df_f.copy()
-
             hora_df_f2["Score"] = (
                 norm_s(hora_df_f2["Vendas"])     * 0.25 +
                 norm_s(hora_df_f2["Comissao"])   * 0.25 +
@@ -599,16 +591,12 @@ def render_radar_shopee():
 
             grp = ["DiaSemana","HoraDia"]
             mom_df = dh_com.groupby(grp, dropna=False).agg(
-                Vendas     =("ID_Pedido",    "nunique"),
-                Comissao   =("Comissao_ped", "sum"),
-                Ticket     =("Comissao_ped", "mean"),
-                N_semanas  =("_semana",      "nunique"),
+                Vendas=("ID_Pedido","nunique"), Comissao=("Comissao_ped","sum"),
+                Ticket=("Comissao_ped","mean"), N_semanas=("_semana","nunique"),
             ).reset_index().fillna(0)
-
             p10_mom = mom_df["Vendas"].quantile(0.10)
             mom_df_f = mom_df[(mom_df["N_semanas"] >= 2) & (mom_df["Vendas"] >= max(p10_mom,1))].copy()
             if mom_df_f.empty: mom_df_f = mom_df.copy()
-
             mom_df_f["Score"] = (
                 norm_s(mom_df_f["Vendas"])   * 0.25 +
                 norm_s(mom_df_f["Comissao"]) * 0.25 +
@@ -620,44 +608,37 @@ def render_radar_shopee():
             pivot_data = mom_df_f[grp + ["Score"]].rename(columns={"Score":"Valor"})
             _score_dia  = dia_df_f["Score"]
             _score_hora = hora_df_f2["Score"]
-
             fmt_val    = lambda v: f"{v:.0f}"
             agg_func   = "mean"
             y_label    = "Score IPA*"
             nota_pesos = "Métrica exclusiva e de propriedade Matiq"
 
         elif met_dh == "Vendas":
-            if usar_media:
-                _tmp = dh.copy()
-                if "Hora_Pedido" in _tmp.columns:
-                    _tmp["_sem"] = _tmp["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp["Hora_Pedido"].dt.year.astype(str)
-                else:
-                    _tmp["_sem"] = "s1"
-                _sem_dia = _tmp.groupby(["_sem","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
-                pivot_data = _sem_dia.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
-                agg_func = "mean"; sub_label_modo = "média/semana"
+            if _usar_media:
+                pivot_data = _pivot_media(dh_com.assign(V=1).rename(columns={"V":"ID_Pedido_c"}),
+                                          col_val="ID_Pedido_c")
+                # sobrescrever com nunique por semana
+                _tmp = dh_com.copy()
+                _sem_grp = _tmp.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="V")
+                pivot_data = _sem_grp.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
+                agg_func = "mean"; _modo_lbl = "média/semana"
             else:
-                pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
-                agg_func = "sum"; sub_label_modo = "total"
-            fmt_val = lambda v: f"{v:.1f}" if usar_media else f"{v:.0f}"
-            y_label = f"Vendas ({sub_label_modo})"; nota_pesos = ""
+                pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
+                agg_func = "sum"; _modo_lbl = "total"
+            fmt_val = lambda v: f"{v:.1f}" if _usar_media else f"{v:.0f}"
+            y_label = f"Vendas ({_modo_lbl})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         elif met_dh == "Comissão (R$)":
-            if usar_media:
-                _tmp2 = dh_com.copy()
-                if "Hora_Pedido" in _tmp2.columns:
-                    _tmp2["_sem"] = _tmp2["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp2["Hora_Pedido"].dt.year.astype(str)
-                else:
-                    _tmp2["_sem"] = "s1"
-                _sem_dia2 = _tmp2.groupby(["_sem","DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
-                pivot_data = _sem_dia2.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
-                agg_func = "mean"; sub_label_modo = "média/semana"
+            if _usar_media:
+                _sem_grp2 = dh_com.groupby(["_semana","DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="V")
+                pivot_data = _sem_grp2.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
+                agg_func = "mean"; _modo_lbl = "média/semana"
             else:
                 pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
-                agg_func = "sum"; sub_label_modo = "total"
+                agg_func = "sum"; _modo_lbl = "total"
             fmt_val = lambda v: fmt_brl(v)
-            y_label = f"Comissão ({sub_label_modo})"; nota_pesos = ""
+            y_label = f"Comissão ({_modo_lbl})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         elif met_dh == "Ticket Médio (R$)":
@@ -667,20 +648,15 @@ def render_radar_shopee():
             _score_dia = None; _score_hora = None
 
         else:  # Cliques
-            if usar_media:
-                _tmp3 = dh.copy()
-                if "Hora_Pedido" in _tmp3.columns:
-                    _tmp3["_sem"] = _tmp3["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp3["Hora_Pedido"].dt.year.astype(str)
-                else:
-                    _tmp3["_sem"] = "s1"
-                _sem_dia3 = _tmp3.groupby(["_sem","DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
-                pivot_data = _sem_dia3.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
-                agg_func = "mean"; sub_label_modo = "média/semana"
+            if _usar_media:
+                _sem_grp3 = dh_com.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="V")
+                pivot_data = _sem_grp3.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
+                agg_func = "mean"; _modo_lbl = "média/semana"
             else:
                 pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
-                agg_func = "sum"; sub_label_modo = "total"
-            fmt_val = lambda v: f"{v:.1f}" if usar_media else f"{v:.0f}"
-            y_label = f"Cliques ({sub_label_modo})"; nota_pesos = ""
+                agg_func = "sum"; _modo_lbl = "total"
+            fmt_val = lambda v: f"{v:.1f}" if _usar_media else f"{v:.0f}"
+            y_label = f"Cliques ({_modo_lbl})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         pivot_data["DiaSemana"] = pd.Categorical(pivot_data["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
@@ -1448,7 +1424,9 @@ def main():
         m["impressoes"]=df_pago_periodo["Impressoes"].sum(); m["alcance"]=df_pago_periodo["Alcance"].sum(); m["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
     df_ant=semana_anterior(df_raw,d_ini,d_fim); m_ant=calcular(df_ant) if not df_ant.empty else None; mv=m_ant if m_ant else {}
     df_pago_v=df[df["Sub_id2"]=="pago"]; df_org=df[df["Sub_id2"]=="organico"]; df_story=df[df["Sub_id2"]=="story"]
+    df_wpp=df[df["Sub_id2"]=="grupo1"]
     m_pago=calcular(df_pago_v) if len(df_pago_v)>0 else None; m_org=calcular(df_org) if len(df_org)>0 else None; m_story=calcular(df_story) if len(df_story)>0 else None
+    m_wpp=calcular(df_wpp) if len(df_wpp)>0 else None
     if m_pago and not df_pago_periodo.empty:
         m_pago["invest"]=invest_pago; m_pago["lucro"]=m_pago["comissao"]-invest_pago; m_pago["roi"]=(m_pago["comissao"]-invest_pago)/invest_pago if invest_pago>0 else 0
         m_pago["impressoes"]=df_pago_periodo["Impressoes"].sum(); m_pago["alcance"]=df_pago_periodo["Alcance"].sum(); m_pago["cliques_meta"]=df_pago_periodo["Cliques_Meta"].sum()
@@ -1462,9 +1440,11 @@ def main():
     df_ant_pago=df_ant[df_ant["Sub_id2"]=="pago"] if not df_ant.empty else pd.DataFrame()
     df_ant_org=df_ant[df_ant["Sub_id2"]=="organico"] if not df_ant.empty else pd.DataFrame()
     df_ant_story=df_ant[df_ant["Sub_id2"]=="story"] if not df_ant.empty else pd.DataFrame()
+    df_ant_wpp=df_ant[df_ant["Sub_id2"]=="grupo1"] if not df_ant.empty else pd.DataFrame()
     m_ant_pago=calcular(df_ant_pago) if not df_ant_pago.empty else None
     m_ant_org=calcular(df_ant_org) if not df_ant_org.empty else None
     m_ant_story=calcular(df_ant_story) if not df_ant_story.empty else None
+    m_ant_wpp=calcular(df_ant_wpp) if not df_ant_wpp.empty else None
     df_daily=df.groupby("Data").agg(Vendas=("Vendas","sum"),Comissao=("Comissao","sum"),Cliques=("Cliques","sum")).reset_index().sort_values("Data")
     df_daily["Ticket_Medio"]=df_daily.apply(lambda r:r["Comissao"]/r["Vendas"] if r["Vendas"]>0 else 0,axis=1)
     df_daily["CTR_calc"]=df_daily.apply(lambda r:r["Vendas"]/r["Cliques"]*100 if r["Cliques"]>0 else 0,axis=1)
@@ -1483,26 +1463,26 @@ def main():
 
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
-    with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(m["comissao"]/n_dias_sel))
+    with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(m["comissao"]/n_dias_sel),_key="comissao")
     comissao_total_ant=mv.get("comissao",0); lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Lucro_calc","#9c5834"),avg_label="média/dia",avg_value=fmt_brl(m["lucro"]/n_dias_sel))
-    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"),avg_label="média/dia",avg_value=fmt_brl(invest_total/n_dias_sel))
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Lucro_calc","#9c5834"),avg_label="média/dia",avg_value=fmt_brl(m["lucro"]/n_dias_sel),_key="lucro")
+    with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"),avg_label="média/dia",avg_value=fmt_brl(invest_total/n_dias_sel),_key="investimento")
     with r4:
         roi_g=m["roi"]; cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
         comissao_ant=mv.get("comissao",0); roi_ant=(comissao_ant-invest_total_ant)/invest_total_ant if invest_pago_ant>0 and invest_total_ant>0 else None
         _roi_med = df_daily["ROI_calc"][df_daily["Investimento"]>0].mean() if (df_daily["Investimento"]>0).any() else 0
-        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"),avg_label="média/dia",avg_value="{:.2f}".format(_roi_med))
+        card("ROI","{:.2f}".format(roi_g),cor_roi_g,delta_html(roi_g,roi_ant if roi_ant is not None else None),sparkline(df_daily,"ROI_calc","#d4a017"),avg_label="média/dia",avg_value="{:.2f}".format(_roi_med),_key="roi")
         st.markdown('<div style="font-size:12px;color:#c5936d;margin-top:-8px;"><span style="color:#7a9e4e;">■</span> &gt;1 bom &nbsp;<span style="color:#d4a017;">■</span> 0-1 atencao &nbsp;<span style="color:#c0392b;">■</span> &lt;0 prejuizo</div>',unsafe_allow_html=True)
     r5,r6,r7,r8=st.columns(4)
-    with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"),avg_label="média/dia",avg_value=fmt_num(int(m["cliques"]/n_dias_sel)))
-    with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"),avg_label="média/dia",avg_value=fmt_num(int(m["vendas"]/n_dias_sel)))
+    with r5: card("Cliques Shopee",fmt_num(m["cliques"]),"yellow",delta_html(m["cliques"],mv.get("cliques",0)),sparkline(df_daily,"Cliques","#d2b095"),avg_label="média/dia",avg_value=fmt_num(int(m["cliques"]/n_dias_sel)),_key="cliques")
+    with r6: card("Vendas",fmt_num(m["vendas"]),"purple",delta_html(m["vendas"],mv.get("vendas",0)),sparkline(df_daily,"Vendas","#9c5834"),avg_label="média/dia",avg_value=fmt_num(int(m["vendas"]/n_dias_sel)),_key="vendas")
     _ctr_med = df_daily["CTR_calc"][df_daily["CTR_calc"]>0].mean() if (df_daily["CTR_calc"]>0).any() else 0
-    with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"),avg_label="média/dia",avg_value=fmt_pct(_ctr_med))
+    with r7: card("CTR Shopee",fmt_pct(m["ctr_shopee"]),"blue",delta_html(m["ctr_shopee"],mv.get("ctr_shopee",0)),sparkline(df_daily,"CTR_calc","#bd6d34"),avg_label="média/dia",avg_value=fmt_pct(_ctr_med),_key="ctr")
     _tk_med = df_daily["Ticket_Medio"][df_daily["Ticket_Medio"]>0].mean() if (df_daily["Ticket_Medio"]>0).any() else 0
-    with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(_tk_med))
+    with r8: card("Ticket Medio",fmt_brl(m["ticket"]),"orange",delta_html(m["ticket"],mv.get("ticket",0)),sparkline(df_daily,"Ticket_Medio","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(_tk_med),_key="ticket")
 
     st.markdown('<div class="section-title">📂 Performance por Canal</div>',unsafe_allow_html=True)
-    cc1,cc2,cc3=st.columns(3)
+    cc1,cc2,cc3,cc4=st.columns(4)
     def canal_card(col,mc,ma,nome,emoji):
         with col:
             if mc:
@@ -1532,6 +1512,7 @@ def main():
     canal_card(cc1,m_pago,m_ant_pago,"Pago","📣")
     canal_card(cc2,m_org,m_ant_org,"Organico","🌱")
     canal_card(cc3,m_story,m_ant_story,"Story","📖")
+    canal_card(cc4,m_wpp,m_ant_wpp,"Whatsapp","💬")
 
     st.markdown('<div id="pago" class="section-title">📣 Campanha Pago</div>',unsafe_allow_html=True)
     if m_pago:
