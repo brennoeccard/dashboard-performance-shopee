@@ -1837,27 +1837,23 @@ def main():
     with ipa_c2: ipa_modo=st.radio("IPA por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ipa_modo",horizontal=True,label_visibility="collapsed")
     ipa_col="Sub_id1" if "Sub_id1" in ipa_modo else "Sub_id3"
     ipa_other="Sub_id3" if ipa_col=="Sub_id1" else "Sub_id1"
-    # Pedidos reais via Insights_Categoria: cada linha = 1 pedido, Qtd = vendas
+    # Pedidos reais via Insights_Categoria cruzado com Insights_Horario (que tem a data)
     dc_raw=ler_categoria()
-    if not dc_raw.empty:
+    dh_raw=ler_horario()
+    if not dc_raw.empty and not dh_raw.empty and "Hora_Pedido" in dh_raw.columns:
+        # IDs de pedidos no período seleccionado (via Insights_Horario que tem data)
+        dh_raw["_data"]=pd.to_datetime(dh_raw["Hora_Pedido"],errors="coerce").dt.date
+        ids_periodo=set(dh_raw[(dh_raw["_data"]>=d_ini)&(dh_raw["_data"]<=d_fim)]["ID_Pedido"].dropna().unique())
         dc_ipa=dc_raw[
             (dc_raw["Sub_id2"]=="organico") &
-            (dc_raw["Sub_id1"]!="") & (dc_raw["Sub_id3"]!="")
+            (dc_raw["Sub_id1"]!="") & (dc_raw["Sub_id3"]!="") &
+            (dc_raw["ID_Pedido"].isin(ids_periodo))
         ].copy()
-        # Filtrar pelo mesmo período
-        if "Hora_Pedido" in dc_ipa.columns:
-            dc_ipa["_data"]=pd.to_datetime(dc_ipa["Hora_Pedido"],errors="coerce").dt.date
-        else:
-            # fallback: sem data disponível, usar tudo
-            dc_ipa["_data"]=None
-        if dc_ipa["_data"].notna().any():
-            dc_ipa=dc_ipa[(dc_ipa["_data"]>=d_ini)&(dc_ipa["_data"]<=d_fim)]
         df_pedidos=dc_ipa.groupby([ipa_col,ipa_other]).agg(
             Pedidos=("ID_Pedido","nunique"),
-            Vendas_cat=("Qtd","sum")
         ).reset_index()
     else:
-        df_pedidos=pd.DataFrame(columns=[ipa_col,ipa_other,"Pedidos","Vendas_cat"])
+        df_pedidos=pd.DataFrame(columns=[ipa_col,ipa_other,"Pedidos"])
     df_org=df[df["Sub_id2"]=="organico"].copy()
     df_ipa_ped=df_org.groupby([ipa_col,ipa_other]).agg(
         Comissao=("Comissao","sum"),
