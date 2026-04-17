@@ -1803,56 +1803,87 @@ def main():
         fig.update_traces(textinfo="percent+label"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
     st.markdown('<div id="campeoes" class="section-title">🏆 Itens Campeoes</div>',unsafe_allow_html=True)
-    df_s3=df[df["Sub_id3"]!=""].groupby("Sub_id3").agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
-    df_s3["CTR"]=(df_s3["Vendas"]/df_s3["Cliques"]*100).fillna(0)
+    ic_c1,ic_c2=st.columns([3,1])
+    with ic_c1: st.markdown('<span style="color:#c5936d;font-size:12px;">Agrupamento para ranking de itens</span>',unsafe_allow_html=True)
+    with ic_c2: ic_modo=st.radio("Agrupar por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ic_modo",horizontal=True,label_visibility="collapsed")
+    ic_col="Sub_id1" if "Sub_id1" in ic_modo else "Sub_id3"
+    df_ic_base=df[df[ic_col]!=""].groupby(ic_col).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
+    df_ic_base["CTR"]=(df_ic_base["Vendas"]/df_ic_base["Cliques"]*100).fillna(0)
     col1,col2=st.columns(2)
     with col1:
-        t5=df_s3.nlargest(5,"Comissao").sort_values("Comissao",ascending=True)
+        t5=df_ic_base.nlargest(5,"Comissao").sort_values("Comissao",ascending=True)
         t5["lbl"]=t5.apply(lambda r:"R$ {:,.2f} | {:,.0f} vendas | CTR {:.1f}%".format(r["Comissao"],r["Vendas"],r["CTR"]),axis=1)
-        fig=px.bar(t5,x="Comissao",y="Sub_id3",orientation="h",title="Top 5 por Comissao",text="lbl",color_discrete_sequence=["#9c5834"])
+        fig=px.bar(t5,x="Comissao",y=ic_col,orientation="h",title="Top 5 por Comissao",text="lbl",color_discrete_sequence=["#9c5834"])
         fig.update_traces(textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
     with col2:
-        t5v=df_s3.nlargest(5,"Vendas").sort_values("Vendas",ascending=True)
-        fig=px.bar(t5v,x="Vendas",y="Sub_id3",orientation="h",title="Top 5 por Vendas",text="Vendas",color_discrete_sequence=["#c5936d"])
+        t5v=df_ic_base.nlargest(5,"Vendas").sort_values("Vendas",ascending=True)
+        fig=px.bar(t5v,x="Vendas",y=ic_col,orientation="h",title="Top 5 por Vendas",text="Vendas",color_discrete_sequence=["#c5936d"])
         fig.update_traces(texttemplate="%{text:.0f}",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
     col3,col4=st.columns(2)
     with col3:
-        t5c=df_s3.nlargest(5,"Cliques").sort_values("Cliques",ascending=True)
-        fig=px.bar(t5c,x="Cliques",y="Sub_id3",orientation="h",title="Top 5 por Cliques",text="Cliques",color_discrete_sequence=["#d2b095"])
+        t5c=df_ic_base.nlargest(5,"Cliques").sort_values("Cliques",ascending=True)
+        fig=px.bar(t5c,x="Cliques",y=ic_col,orientation="h",title="Top 5 por Cliques",text="Cliques",color_discrete_sequence=["#d2b095"])
         fig.update_traces(texttemplate="%{text:.0f}",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
     with col4:
-        t5ctr=df_s3.nlargest(5,"CTR").sort_values("CTR",ascending=True)
-        fig=px.bar(t5ctr,x="CTR",y="Sub_id3",orientation="h",title="Top 5 por CTR",text="CTR",color_discrete_sequence=["#bd6d34"])
+        t5ctr=df_ic_base.nlargest(5,"CTR").sort_values("CTR",ascending=True)
+        fig=px.bar(t5ctr,x="CTR",y=ic_col,orientation="h",title="Top 5 por CTR",text="CTR",color_discrete_sequence=["#bd6d34"])
         fig.update_traces(texttemplate="%{text:.2f}%",textposition="outside"); fig.update_layout(**PLOTLY_THEME); st.plotly_chart(fig,use_container_width=True)
 
     st.markdown('<div id="ipa" class="section-title">🎯 IPA — Indice de Potencial de Anuncio</div>',unsafe_allow_html=True)
-    st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;color:#c5936d;font-size:12px;">O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo. Score 0-100. <b style="color:#c0392b;">N/A</b> = menos de 3 vendas.</div>',unsafe_allow_html=True)
-    df_ipa=df[df["Sub_id2"].isin(["organico","story"])].groupby(["Sub_id3","Sub_id1"]).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
-    df_ipa["CTR"]=(df_ipa["Vendas"]/df_ipa["Cliques"]*100).fillna(0); df_ipa["Ticket"]=(df_ipa["Comissao"]/df_ipa["Vendas"]).fillna(0)
-    df_v=df_ipa[df_ipa["Vendas"]>=3].copy()
+    st.markdown('<div style="background:#1a1210;border:1px solid #3a2c28;border-radius:8px;padding:12px 16px;margin-bottom:12px;color:#c5936d;font-size:12px;">O <b style="color:#f6e8d8;">IPA</b> identifica criativos do organico e story com maior potencial para anuncio directo. Score 0-100. <b style="color:#c0392b;">N/A</b> = menos de 3 vendas. O score penaliza criativos com muitas vendas concentradas em poucos pedidos (ex: 3 vendas num unico pedido valem menos que 3 vendas em 3 pedidos distintos).</div>',unsafe_allow_html=True)
+    ipa_c1,ipa_c2=st.columns([3,1])
+    with ipa_c1: st.markdown('<span style="color:#c5936d;font-size:12px;">Agrupamento para o IPA</span>',unsafe_allow_html=True)
+    with ipa_c2: ipa_modo=st.radio("IPA por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ipa_modo",horizontal=True,label_visibility="collapsed")
+    ipa_col="Sub_id1" if "Sub_id1" in ipa_modo else "Sub_id3"
+    ipa_other="Sub_id3" if ipa_col=="Sub_id1" else "Sub_id1"
+    # Para calcular Pedidos precisamos contar linhas únicas (cada linha = 1 pedido/dia distinto)
+    df_org=df[df["Sub_id2"].isin(["organico","story"])].copy()
+    # Pedidos = numero de linhas (registos) distintos por grupo — proxy para diversidade de pedidos
+    df_ipa_ped=df_org.groupby([ipa_col,ipa_other]).agg(
+        Comissao=("Comissao","sum"),
+        Vendas=("Vendas","sum"),
+        Cliques=("Cliques","sum"),
+        Pedidos=("Vendas","count")  # contagem de linhas = registos de pedidos distintos
+    ).reset_index()
+    df_ipa_ped["CTR"]=(df_ipa_ped["Vendas"]/df_ipa_ped["Cliques"]*100).fillna(0)
+    df_ipa_ped["Ticket"]=(df_ipa_ped["Comissao"]/df_ipa_ped["Vendas"]).fillna(0)
+    # Ratio de diversidade de pedidos: Pedidos/Vendas — quanto mais próximo de 1, mais pedidos distintos
+    # Normalizado depois como fator de qualidade do score
+    df_v=df_ipa_ped[df_ipa_ped["Vendas"]>=3].copy()
     if not df_v.empty:
         for col in ["Comissao","Vendas","Ticket","CTR"]:
             mn,mx=df_v[col].min(),df_v[col].max()
             df_v[col+"_n"]=((df_v[col]-mn)/(mx-mn)*100) if mx>mn else 50.0
-        df_v["Cliques_n"]=((df_v["Cliques"]-df_v["Cliques"].min())/(df_v["Cliques"].max()-df_v["Cliques"].min())*100) if df_v["Cliques"].max()>df_v["Cliques"].min() else 50.0
-        df_v["IPA"]=(df_v["Comissao_n"]*0.35+df_v["Vendas_n"]*0.25+df_v["Ticket_n"]*0.20+df_v["CTR_n"]*0.10+df_v["Cliques_n"]*0.10).round(1)
-    ja_pago=set(df[df["Sub_id2"]=="pago"]["Sub_id3"].unique())
-    df_ipa=df_ipa.merge(df_v[["Sub_id3","Sub_id1","IPA"]] if not df_v.empty else pd.DataFrame(columns=["Sub_id3","Sub_id1","IPA"]),on=["Sub_id3","Sub_id1"],how="left")
-    df_ipa=df_ipa[~df_ipa["Sub_id3"].isin(ja_pago)]
-    df_ipa["IPA_d"]=df_ipa["IPA"].apply(lambda x:"{:.1f}".format(x) if pd.notna(x) else "N/A"); df_ipa["IPA_s"]=df_ipa["IPA"].fillna(-1)
+        mn_c,mx_c=df_v["Cliques"].min(),df_v["Cliques"].max()
+        df_v["Cliques_n"]=((df_v["Cliques"]-mn_c)/(mx_c-mn_c)*100) if mx_c>mn_c else 50.0
+        # Diversidade de pedidos: ratio Pedidos/Vendas normalizado (1 pedido/venda = máxima diversidade)
+        df_v["Div_pedidos"]=(df_v["Pedidos"]/df_v["Vendas"]).clip(0,1)
+        mn_d,mx_d=df_v["Div_pedidos"].min(),df_v["Div_pedidos"].max()
+        df_v["Div_n"]=((df_v["Div_pedidos"]-mn_d)/(mx_d-mn_d)*100) if mx_d>mn_d else 50.0
+        # IPA: Comissao 30% | Vendas 20% | Ticket 18% | CTR 10% | Cliques 7% | Diversidade Pedidos 15%
+        df_v["IPA"]=(df_v["Comissao_n"]*0.30+df_v["Vendas_n"]*0.20+df_v["Ticket_n"]*0.18+df_v["CTR_n"]*0.10+df_v["Cliques_n"]*0.07+df_v["Div_n"]*0.15).round(1)
+    ja_pago=set(df[df["Sub_id2"]=="pago"][ipa_col].unique())
+    merge_cols=[ipa_col,ipa_other,"IPA","Pedidos"] if not df_v.empty else [ipa_col,ipa_other]
+    df_ipa=df_ipa_ped.merge(df_v[merge_cols] if not df_v.empty else pd.DataFrame(columns=[ipa_col,ipa_other,"IPA","Pedidos"]),on=[ipa_col,ipa_other],how="left",suffixes=("","_calc"))
+    if "Pedidos_calc" in df_ipa.columns: df_ipa["Pedidos"]=df_ipa["Pedidos_calc"].fillna(df_ipa["Pedidos"]); df_ipa.drop(columns=["Pedidos_calc"],inplace=True)
+    df_ipa=df_ipa[~df_ipa[ipa_col].isin(ja_pago)]
+    df_ipa["IPA_d"]=df_ipa["IPA"].apply(lambda x:"{:.1f}".format(x) if pd.notna(x) else "N/A")
+    df_ipa["IPA_s"]=df_ipa["IPA"].fillna(-1)
     df_ipa=df_ipa.sort_values("IPA_s",ascending=False).reset_index(drop=True)
     df_ic=df_ipa[df_ipa["IPA_s"]>=0].head(15).sort_values("IPA_s",ascending=True)
     if not df_ic.empty:
-        fig=px.bar(df_ic,x="IPA_s",y="Sub_id3",orientation="h",title="Top Criativos por IPA",text="IPA_d",color="IPA_s",color_continuous_scale=["#562d1d","#9c5834","#bd6d34","#f6e8d8"],hover_data={"Sub_id1":True,"Vendas":True,"Comissao":":.2f","CTR":":.2f","Ticket":":.2f","IPA_s":False},labels={"IPA_s":"IPA","Sub_id3":"Criativo"})
+        hover_extra={ipa_other:True,"Vendas":True,"Pedidos":True,"Comissao":":.2f","CTR":":.2f","Ticket":":.2f","IPA_s":False}
+        fig=px.bar(df_ic,x="IPA_s",y=ipa_col,orientation="h",title="Top por IPA",text="IPA_d",color="IPA_s",color_continuous_scale=["#562d1d","#9c5834","#bd6d34","#f6e8d8"],hover_data=hover_extra,labels={"IPA_s":"IPA",ipa_col:ipa_col})
         fig.update_traces(textposition="outside"); fig.update_layout(**PLOTLY_THEME,height=max(300,len(df_ic)*40),coloraxis_showscale=False); st.plotly_chart(fig,use_container_width=True)
-    df_it=df_ipa[["Sub_id3","Sub_id1","IPA_d","Vendas","Cliques","Comissao","CTR","Ticket"]].copy()
-    df_it.columns=["Sub_id3","Sub_id1","IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"]
+    df_it=df_ipa[[ipa_col,ipa_other,"IPA_d","Vendas","Pedidos","Cliques","Comissao","CTR","Ticket"]].copy()
+    df_it.columns=[ipa_col,ipa_other,"IPA","Vendas","Pedidos","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"]
     df_it["Comissao (R$)"]=df_it["Comissao (R$)"].apply(lambda x:"{:.2f}".format(x))
     df_it["CTR (%)"]=df_it["CTR (%)"].apply(lambda x:"{:.2f}%".format(x))
     df_it["Ticket (R$)"]=df_it["Ticket (R$)"].apply(lambda x:"{:.2f}".format(x))
     df_it["Cliques"]=df_it["Cliques"].apply(lambda x:"{:,.0f}".format(x).replace(",","."))
     df_it["Vendas"]=df_it["Vendas"].apply(lambda x:"{:,.0f}".format(x))
-    styled=df_it.style.set_properties(subset=["Sub_id3","Sub_id1"],**{"text-align":"left"}).set_properties(subset=["IPA","Vendas","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"],**{"text-align":"center"}).set_table_styles([{"selector":"th","props":[("text-align","center")]}])
+    df_it["Pedidos"]=df_it["Pedidos"].apply(lambda x:"{:,.0f}".format(x) if pd.notna(x) else "—")
+    styled=df_it.style.set_properties(subset=[ipa_col,ipa_other],**{"text-align":"left"}).set_properties(subset=["IPA","Vendas","Pedidos","Cliques","Comissao (R$)","CTR (%)","Ticket (R$)"],**{"text-align":"center"}).set_table_styles([{"selector":"th","props":[("text-align","center")]}])
     st.dataframe(styled,use_container_width=True,height=300)
 
     st.markdown('<div class="section-title">📋 Dados Detalhados</div>',unsafe_allow_html=True)
@@ -1887,7 +1918,8 @@ def main():
         with st.spinner("A analisar todos os canais..."):
             try:
                 api_key=st.secrets.get("anthropic",{}).get("api_key","")
-                top_ipa=df_v.nlargest(8,"IPA")[["Sub_id1","Sub_id3","IPA","Comissao","Vendas","CTR","Ticket"]].to_string(index=False) if not df_v.empty else "Sem dados"
+                _ai_cols=[ipa_col,ipa_other,"IPA","Comissao","Vendas","CTR","Ticket","Pedidos"]; _ai_cols=[c for c in _ai_cols if c in df_v.columns]
+                top_ipa=df_v.nlargest(8,"IPA")[_ai_cols].to_string(index=False) if not df_v.empty else "Sem dados"
                 dados_g="Periodo:{} a {}\nComissao:{:.2f}|Lucro:{:.2f}|ROI:{:.2f}|Vendas:{:.0f}\nPago:{:.0f}vnd|R${:.2f}|ROI:{:.2f}|Ticket:{:.2f}\nOrganico:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nStory:{:.0f}vnd|R${:.2f}|Ticket:{:.2f}\nInvest.Awareness:R${:.2f}\nTop IPA:\n{}".format(d_ini,d_fim,m["comissao"],m["lucro"],m["roi"],m["vendas"],m_pago["vendas"] if m_pago else 0,m_pago["comissao"] if m_pago else 0,m_pago["roi"] if m_pago else 0,m_pago["ticket"] if m_pago else 0,m_org["vendas"] if m_org else 0,m_org["comissao"] if m_org else 0,m_org["ticket"] if m_org else 0,m_story["vendas"] if m_story else 0,m_story["comissao"] if m_story else 0,m_story["ticket"] if m_story else 0,invest_aw,top_ipa)
                 prompt_g="Es especialista senior Meta Ads e afiliados Shopee. Linguagem tecnica.\nCONTEXTO: PAGO=unico com investimento. ORGANICO/STORY=custo zero. NUNCA migrar verba.\nFornece: 1.Diagnostico. 2.Avaliacao cada canal. 3.Acoes concretas. 4.CRIATIVOS PARA ANUNCIO baseado no IPA com CAC alvo (ticket*0.3-0.5).\nDados:"+dados_g
                 resp2=requests.post("https://api.anthropic.com/v1/messages",headers={"Content-Type":"application/json","x-api-key":api_key,"anthropic-version":"2023-06-01"},json={"model":"claude-sonnet-4-20250514","max_tokens":1200,"messages":[{"role":"user","content":prompt_g}]},timeout=30)
