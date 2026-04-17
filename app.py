@@ -1588,7 +1588,7 @@ def main():
             df_cri["CAC"]     = df_cri["Invest_card"].div(df_cri["Vendas"].replace(0, np.nan)).fillna(0)
             df_cri["RPC"]     = df_cri["Comissao"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
             df_cri["CPC"]     = df_cri["Invest_card"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
-            df_cri["CTR"]     = (df_cri["Cliques_Shopee"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan))).fillna(0) * 100
+            df_cri["CTR"]     = (df_cri["Vendas"].div(df_cri["Cliques_Shopee"].replace(0, np.nan))).fillna(0) * 100
 
             def badge_decisao_cri(row):
                 roi     = row["ROI"]
@@ -1617,7 +1617,7 @@ def main():
                 '<div>Campanha</div>'
                 '<div>Card (Sub_id3)</div>'
                 '<div style="text-align:right">Invest.*</div>'
-                '<div style="text-align:right">Cliques</div>'
+                '<div style="text-align:right">Cliq. Meta</div>'
                 '<div style="text-align:right">Vendas</div>'
                 '<div style="text-align:right">Comiss\u00e3o</div>'
                 '<div style="text-align:right">Receita</div>'
@@ -1652,7 +1652,7 @@ def main():
                 rpc_str  = "R${:.3f}".format(rpc_val) if pd.notna(rpc_val) and rpc_val > 0 else "\u2014"
                 rpc_cor  = ("#7a9e4e" if (pd.notna(rpc_val) and pd.notna(cpc_val) and rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val)
                             else ("#c0392b" if (pd.notna(rpc_val) and pd.notna(cpc_val) and rpc_val > 0 and cpc_val > 0) else "#8892a4"))
-                clq_str  = "{:,}".format(int(row["Cliques_Shopee"])).replace(",",".")
+                clq_str  = "{:,}".format(int(row["Cliques_Meta_card"])).replace(",",".")
                 sid1     = row["Sub_id1"] or "\u2014"
                 sid3     = row["Sub_id3"] or "\u2014"
                 rows_html += (
