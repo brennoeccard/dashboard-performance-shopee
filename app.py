@@ -1429,13 +1429,14 @@ def main():
     else: df_daily["Invest_aw"]=0.0
     df_daily["Investimento"]=df_daily["Invest_pago"]+df_daily["Invest_aw"]
     df_daily["ROI_calc"]=df_daily.apply(lambda r:(r["Comissao"]-r["Investimento"])/r["Investimento"] if r["Investimento"]>0 else 0,axis=1)
+    df_daily["Lucro_calc"]=df_daily["Comissao"]-df_daily["Investimento"]
     n_dias_sel = max((d_fim - d_ini).days + 1, 1)  # dias do período seleccionado
 
     st.markdown('<div id="kpis" class="section-title">💰 KPIs Gerais</div>',unsafe_allow_html=True)
     r1,r2,r3,r4=st.columns(4)
     with r1: card("Comissao Total",fmt_brl(m["comissao"]),"blue",delta_html(m["comissao"],mv.get("comissao",0)),sparkline(df_daily,"Comissao","#bd6d34"),avg_label="média/dia",avg_value=fmt_brl(m["comissao"]/n_dias_sel))
     comissao_total_ant=mv.get("comissao",0); lucro_ant=(comissao_total_ant-invest_total_ant) if invest_total_ant>0 else None
-    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Comissao","#9c5834"),avg_label="média/dia",avg_value=fmt_brl(m["lucro"]/n_dias_sel))
+    with r2: card("Lucro Total",fmt_brl(m["lucro"]),"green" if m["lucro"]>=0 else "red",delta_html(m["lucro"],lucro_ant if lucro_ant is not None else 0),sparkline(df_daily,"Lucro_calc","#9c5834"),avg_label="média/dia",avg_value=fmt_brl(m["lucro"]/n_dias_sel))
     with r3: card("Investimento Total",fmt_brl(invest_total),"red",delta_html(invest_total,invest_total_ant,inverted=True),sparkline(df_daily,"Investimento","#c0392b"),avg_label="média/dia",avg_value=fmt_brl(invest_total/n_dias_sel))
     with r4:
         roi_g=m["roi"]; cor_roi_g="roi-green" if roi_g>1 else ("roi-yellow" if roi_g>=0 else "roi-red")
@@ -1496,7 +1497,17 @@ def main():
         vnd_med=m_pago["vendas"]/n_dias_p; com_med=m_pago["comissao"]/n_dias_p; inv_med=invest_pago/n_dias_p
         def ppair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
-                st.markdown('<div class="metric-card {c}" style="margin-bottom:2px;"><div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}</div><div class="metric-card {c}" style="opacity:0.75;"><div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
+                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
+                    '</div>'
+                    '<div class="metric-card {c}" style="opacity:0.85;">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{bl}</span>'
+                    '<span style="color:#c5936d;font-size:13px;font-weight:500;">{bv}</span>'
+                    '</div>{bd}'
+                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
+                    unsafe_allow_html=True)
         st.markdown('<div style="color:#c5936d;font-size:11px;font-weight:600;margin:8px 0 4px 0;">RESULTADOS</div>',unsafe_allow_html=True)
         k1,k2,k3,k4,k5=st.columns(5)
         n_dias_p_ant=max(len(df_ant_pago["Data"].unique()),1) if not df_ant_pago.empty else 1
@@ -1717,7 +1728,17 @@ def main():
         n_dias_aw=len(df_aw["Data"].unique()) or 1; inv_aw_med=inv_aw_s/n_dias_aw; inv_aw_med_a=(inv_a/len(df_aw_ant["Data"].unique())) if not df_aw_ant.empty and len(df_aw_ant["Data"].unique())>0 else 0
         def pair(col,top_label,top_val,top_delta,bot_label,bot_val,bot_delta,color):
             with col:
-                st.markdown('<div class="metric-card {c}" style="margin-bottom:2px;"><div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}</div><div class="metric-card {c}" style="opacity:0.75;"><div class="metric-label">{bl}</div><div class="metric-value" style="font-size:16px;">{bv}</div>{bd}</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="metric-card {c}" style="margin-bottom:2px;">'
+                    '<div class="metric-label">{tl}</div><div class="metric-value">{tv}</div>{td}'
+                    '</div>'
+                    '<div class="metric-card {c}" style="opacity:0.85;">'
+                    '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    '<span style="color:#8892a4;font-size:10px;text-transform:uppercase;letter-spacing:1px;">{bl}</span>'
+                    '<span style="color:#c5936d;font-size:13px;font-weight:500;">{bv}</span>'
+                    '</div>{bd}'
+                    '</div>'.format(c=color,tl=top_label,tv=top_val,td=top_delta,bl=bot_label,bv=bot_val,bd=bot_delta),
+                    unsafe_allow_html=True)
         aw1,aw2,aw3=st.columns(3)
         pair(aw1,"Investimento",fmt_brl(inv_aw_s),delta_html(inv_aw_s,inv_a),"Invest./dia",fmt_brl(inv_aw_med),delta_html(inv_aw_med,inv_aw_med_a),"red")
         pair(aw2,"Impressoes",fmt_num(int(imp_aw)),delta_html(imp_aw,imp_a),"CPM",fmt_brl(cpm_aw),delta_html(cpm_aw,cpm_a,inverted=True),"yellow")
