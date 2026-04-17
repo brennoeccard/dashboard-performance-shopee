@@ -1921,11 +1921,24 @@ def main():
     df_disp["CTR"]=df_disp["CTR"].apply(lambda x:"{:.1f}%".format(x))
     df_disp["Ticket"]=df_disp["Ticket"].apply(lambda x:"R$ {:.2f}".format(x))
     st.dataframe(df_disp,use_container_width=True,height=400)
-    # Linha de resumo alinhada abaixo da tabela
+    # Linha de resumo alinhada — mesma grelha de colunas da tabela
+    # Colunas: idx(40) | Data | Sub_id2 | Sub_id1 | Sub_id3 | Cliques | Vendas | Comissao | CTR | Ticket
+    # Usamos grid com proporções aproximadas ao st.dataframe
     r_cliques=int(df_t["Cliques"].sum()); r_vendas=int(df_t["Vendas"].sum()); r_comissao=df_t["Comissao"].sum()
     r_ctr=(r_vendas/r_cliques*100) if r_cliques>0 else 0.0; r_ticket=(r_comissao/r_vendas) if r_vendas>0 else 0.0
-    df_resumo=pd.DataFrame([{"Data":"","Sub_id2":"","Sub_id1":f"∑ {len(df_t)} linhas","Sub_id3":"","Cliques":r_cliques,"Vendas":r_vendas,"Comissao":"R$ {:.2f}".format(r_comissao),"CTR":"{:.1f}%".format(r_ctr),"Ticket":"R$ {:.2f}".format(r_ticket)}])
-    st.dataframe(df_resumo,use_container_width=True,hide_index=True,height=58)
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:40px 100px 90px 130px 160px 80px 70px 110px 80px 100px;'
+        'gap:0;background:linear-gradient(135deg,#1e2a14,#243018);border:1px solid #7a9e4e;border-radius:0 0 8px 8px;'
+        'padding:8px 12px;align-items:center;margin-top:-6px;">'
+        '<div style="color:#7a9e4e;font-size:10px;font-weight:700;">∑</div>'
+        '<div style="color:#7a9e4e;font-size:10px;font-weight:600;grid-column:span 4;">RESUMO &nbsp;·&nbsp; {} linhas</div>'
+        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🖱 {:,}</div>'
+        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🛒 {:,}</div>'
+        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">💰 R$ {:.2f}</div>'
+        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">📊 {:.1f}%</div>'
+        '<div style="color:#f6e8d8;font-size:12px;font-weight:600;text-align:right;">🎫 R$ {:.2f}</div>'
+        '</div>'.format(len(df_t),r_cliques,r_vendas,r_comissao,r_ctr,r_ticket),
+        unsafe_allow_html=True)
     html_r="<html><body><h1>Relatorio Matiq </h1><p>Periodo: {} a {}</p><p>Comissao: {} | Lucro: {} | ROI: {:.2f} | Invest: {}</p>{}</body></html>".format(d_ini,d_fim,fmt_brl(m["comissao"]),fmt_brl(m["lucro"]),m["roi"],fmt_brl(invest_total),df_t.to_html(index=False))
     st.download_button("📥 Download HTML",data=html_r.encode("utf-8"),file_name="relatorio_{}_{}.html".format(d_ini,d_fim),mime="text/html",key="dl_btn")
 
