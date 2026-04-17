@@ -509,6 +509,18 @@ def render_radar_shopee():
         met_dh = st.radio("Métrica", ["🏅 Score IPA","Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                           horizontal=True, key="rs_dh_met", label_visibility="collapsed")
 
+        # toggle Total / Média — só aparece para métricas não-IPA e não-Ticket
+        # (Ticket já é uma média por natureza, IPA tem lógica própria)
+        if met_dh not in ["🏅 Score IPA","Ticket Médio (R$)"]:
+            modo_agg = st.radio(
+                "", ["📊 Total acumulado","📈 Média por semana"],
+                horizontal=True, key="rs_dh_modo", label_visibility="collapsed",
+                index=1  # default: média por semana (mais honesta)
+            )
+            usar_media = (modo_agg == "📈 Média por semana")
+        else:
+            usar_media = True  # IPA e Ticket: sempre média
+
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
         dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
@@ -615,23 +627,60 @@ def render_radar_shopee():
             nota_pesos = "Métrica exclusiva e de propriedade Matiq"
 
         elif met_dh == "Vendas":
-            pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
-            fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Vendas"; nota_pesos = ""
+            if usar_media:
+                _tmp = dh.copy()
+                if "Hora_Pedido" in _tmp.columns:
+                    _tmp["_sem"] = _tmp["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp["Hora_Pedido"].dt.year.astype(str)
+                else:
+                    _tmp["_sem"] = "s1"
+                _sem_dia = _tmp.groupby(["_sem","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
+                pivot_data = _sem_dia.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
+                agg_func = "mean"; sub_label_modo = "média/semana"
+            else:
+                pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="Valor")
+                agg_func = "sum"; sub_label_modo = "total"
+            fmt_val = lambda v: f"{v:.1f}" if usar_media else f"{v:.0f}"
+            y_label = f"Vendas ({sub_label_modo})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         elif met_dh == "Comissão (R$)":
-            pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
-            fmt_val = lambda v: fmt_brl(v); agg_func = "sum"; y_label = "Comissão (R$)"; nota_pesos = ""
+            if usar_media:
+                _tmp2 = dh_com.copy()
+                if "Hora_Pedido" in _tmp2.columns:
+                    _tmp2["_sem"] = _tmp2["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp2["Hora_Pedido"].dt.year.astype(str)
+                else:
+                    _tmp2["_sem"] = "s1"
+                _sem_dia2 = _tmp2.groupby(["_sem","DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
+                pivot_data = _sem_dia2.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
+                agg_func = "mean"; sub_label_modo = "média/semana"
+            else:
+                pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].sum().reset_index(name="Valor")
+                agg_func = "sum"; sub_label_modo = "total"
+            fmt_val = lambda v: fmt_brl(v)
+            y_label = f"Comissão ({sub_label_modo})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         elif met_dh == "Ticket Médio (R$)":
             pivot_data = dh_com.groupby(["DiaSemana","HoraDia"])["Comissao_ped"].mean().reset_index(name="Valor")
-            fmt_val = lambda v: fmt_brl(v); agg_func = "mean"; y_label = "Ticket Médio (R$)"; nota_pesos = ""
+            fmt_val = lambda v: fmt_brl(v); agg_func = "mean"
+            y_label = "Ticket Médio (R$)"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
-        else:
-            pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
-            fmt_val = lambda v: f"{v:.0f}"; agg_func = "sum"; y_label = "Cliques"; nota_pesos = ""
+        else:  # Cliques
+            if usar_media:
+                _tmp3 = dh.copy()
+                if "Hora_Pedido" in _tmp3.columns:
+                    _tmp3["_sem"] = _tmp3["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + _tmp3["Hora_Pedido"].dt.year.astype(str)
+                else:
+                    _tmp3["_sem"] = "s1"
+                _sem_dia3 = _tmp3.groupby(["_sem","DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
+                pivot_data = _sem_dia3.groupby(["DiaSemana","HoraDia"])["Valor"].mean().reset_index(name="Valor")
+                agg_func = "mean"; sub_label_modo = "média/semana"
+            else:
+                pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
+                agg_func = "sum"; sub_label_modo = "total"
+            fmt_val = lambda v: f"{v:.1f}" if usar_media else f"{v:.0f}"
+            y_label = f"Cliques ({sub_label_modo})"; nota_pesos = ""
             _score_dia = None; _score_hora = None
 
         pivot_data["DiaSemana"] = pd.Categorical(pivot_data["DiaSemana"], categories=ORDEM_DIAS, ordered=True)
