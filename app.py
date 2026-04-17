@@ -1807,7 +1807,7 @@ def main():
     with ic_c1: st.markdown('<span style="color:#c5936d;font-size:12px;">Agrupamento para ranking de itens</span>',unsafe_allow_html=True)
     with ic_c2: ic_modo=st.radio("Agrupar por",["Sub_id3 (Criativo)","Sub_id1 (Grupo)"],key="ic_modo",horizontal=True,label_visibility="collapsed")
     ic_col="Sub_id1" if "Sub_id1" in ic_modo else "Sub_id3"
-    df_ic_base=df[df[ic_col]!=""].groupby(ic_col).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
+    df_ic_base=df[(df[ic_col]!="")&(df["Sub_id2"]!="story")].groupby(ic_col).agg(Comissao=("Comissao","sum"),Vendas=("Vendas","sum"),Cliques=("Cliques","sum")).reset_index()
     df_ic_base["Ticket"]=(df_ic_base["Comissao"]/df_ic_base["Vendas"]).fillna(0)
     col1,col2=st.columns(2)
     with col1:
