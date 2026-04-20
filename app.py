@@ -1640,7 +1640,7 @@ def main():
             df_cri["CAC"]     = df_cri["Invest_card"].div(df_cri["Vendas"].replace(0, np.nan)).fillna(0)
             df_cri["RPC"]     = df_cri["Comissao"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
             df_cri["CPC"]     = df_cri["Invest_card"].div(df_cri["Cliques_Meta_card"].replace(0, np.nan)).fillna(0)
-            df_cri["CTR"]     = (df_cri["Vendas"].div(df_cri["Cliques_Shopee"].replace(0, np.nan))).fillna(0) * 100
+            df_cri["CTR"]     = df_cri["Cliques_Meta_card"].div(df_cri["Vendas"].replace(0, np.nan)).fillna(0)  # cliques Meta por venda
 
             def badge_decisao_cri(row):
                 roi     = row["ROI"]
@@ -1679,7 +1679,7 @@ def main():
                 '<div style="text-align:right">ROI</div>'
                 '<div style="text-align:right">CAC</div>'
                 '<div style="text-align:right">CPC</div>'
-                '<div style="text-align:right">CTR</div>'
+                '<div style="text-align:right">Cliq/Venda</div>'
                 '<div style="text-align:right">RPC\u25b2</div>'
                 '<div style="text-align:center">Status</div>'
                 '</div>'
@@ -1702,7 +1702,7 @@ def main():
                 cpc_val  = row.get("CPC", np.nan)
                 cpc_str  = "R${:.2f}".format(cpc_val) if pd.notna(cpc_val) and cpc_val > 0 else "\u2014"
                 ctr_raw  = row.get("CTR", np.nan)
-                ctr_str  = "{:.1f}%".format(ctr_raw) if pd.notna(ctr_raw) and ctr_raw > 0 else "\u2014"
+                ctr_str  = "{:.0f}".format(ctr_raw) if pd.notna(ctr_raw) and ctr_raw > 0 else "\u2014"
                 rpc_val  = row.get("RPC", np.nan)
                 rpc_str  = "R${:.3f}".format(rpc_val) if pd.notna(rpc_val) and rpc_val > 0 else "\u2014"
                 rpc_cor  = ("#7a9e4e" if (pd.notna(rpc_val) and pd.notna(cpc_val) and rpc_val > 0 and cpc_val > 0 and rpc_val > cpc_val)
@@ -1735,18 +1735,19 @@ def main():
 
             legenda_html = (
                 '<div style="padding:8px 12px;background:#161210;border-radius:0 0 6px 6px;'
-                'border-top:1px solid #2a1f1a;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'
+                'border-top:1px solid #2a1f1a;">'
+                '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">'
                 '<span style="color:#7a9e4e;font-size:10px;">\U0001f7e2 Escalar \u2192 ROI &gt; 1</span>'
                 '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0\u20131</span>'
                 '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
                 '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias</span>'
-                '<span style="color:#6a5a52;font-size:10px;">\u26ab Desligada \u2192 sem invest. nos \u00faltimos 3 dias da planilha</span>'
-                '<span style="color:#c5936d;font-size:10px;margin-left:auto;">'
-                '* Invest. prop. por cliques &nbsp;|\u00a0 Receita = Comiss\u00e3o \u2212 Invest. &nbsp;|\u00a0'
-                ' RPC\u25b2 = Comiss\u00e3o/Cliques &nbsp;'
-                '<span style="color:#7a9e4e;">\u25cf</span> verde se RPC &gt; CPC &nbsp;'
-                '<span style="color:#c0392b;">\u25cf</span> vermelho se RPC \u2264 CPC'
-                '</span></div>'
+                '<span style="color:#6a5a52;font-size:10px;">\u26ab Desligada \u2192 sem invest. nos \u00faltimos 3 dias</span>'
+                '</div>'
+                '<div style="background:#1f1208;border:1px solid #3a2c28;border-radius:6px;padding:6px 10px;">'
+                '<span style="color:#d4a017;font-size:10px;font-weight:600;">\u26a0\ufe0f Aten\u00e7\u00e3o: </span>'
+                '<span style="color:#c5936d;font-size:10px;">Campanhas desligadas podem apresentar ROI elevado devido ao modelo de atribui\u00e7\u00e3o de 7 dias — vendas continuam a ser atribu\u00eddas mesmo ap\u00f3s a campanha ser pausada. N\u00e3o reactive uma campanha com base nesse ROI.</span>'
+                '</div>'
+                '</div>'
             )
 
             st.markdown(
