@@ -1584,6 +1584,20 @@ def main():
 
         dias_por_sid1 = df_pago_periodo.groupby("Sub_id1")["Data"].nunique().reset_index(name="N_dias")
 
+        # Campanhas activas: tiveram investimento nos últimos 3 dias da planilha Pago (global)
+        _ultimo_dia_pago = df_pago_raw["Data"].max().date() if not df_pago_raw.empty else None
+        if _ultimo_dia_pago:
+            _janela_activa = _ultimo_dia_pago - timedelta(days=2)  # últimos 3 dias
+            _sid1_activos = set(
+                df_pago_raw[
+                    (df_pago_raw["Data"].dt.date >= _janela_activa) &
+                    (df_pago_raw["Data"].dt.date <= _ultimo_dia_pago) &
+                    (df_pago_raw["Investimento"] > 0)
+                ]["Sub_id1"].unique()
+            )
+        else:
+            _sid1_activos = set()
+
         inv_por_sid1 = df_pago_periodo.groupby("Sub_id1").agg(
             Investimento=("Investimento","sum"),
             Cliques_Meta=("Cliques_Meta","sum"),
@@ -1594,6 +1608,7 @@ def main():
         df_cri["Investimento"] = df_cri["Investimento"].fillna(0)
         df_cri["Cliques_Meta"] = df_cri["Cliques_Meta"].fillna(0)
         df_cri["N_dias"]       = df_cri["N_dias"].fillna(0).astype(int)
+        df_cri["Activa"]       = df_cri["Sub_id1"].isin(_sid1_activos)
 
         # Distribuir investimento proporcional e proteger contra índices desalinhados
         tot_clq = df_cri.groupby("Sub_id1")["Cliques_Shopee"].transform("sum")
@@ -1626,6 +1641,9 @@ def main():
                 roi     = row["ROI"]
                 cliques = row["Cliques_Shopee"]
                 n_dias  = row["N_dias"]
+                activa  = row.get("Activa", True)
+                if not activa:
+                    return ("\u26ab Desligada", "#6a5a52", "#1a1410")
                 if n_dias < MIN_DIAS or pd.isna(roi):
                     return ("\u26aa Aguardar", "#8892a4", "#1e1e2e")
                 if roi > 1:
@@ -1717,6 +1735,7 @@ def main():
                 '<span style="color:#d4a017;font-size:10px;">\U0001f7e1 Monitorar \u2192 ROI 0\u20131</span>'
                 '<span style="color:#c0392b;font-size:10px;">\U0001f534 Pausar \u2192 ROI &lt; 0 e cliques \u2265 100</span>'
                 '<span style="color:#8892a4;font-size:10px;">\u26aa Aguardar \u2192 &lt; 3 dias</span>'
+                '<span style="color:#6a5a52;font-size:10px;">\u26ab Desligada \u2192 sem invest. nos \u00faltimos 3 dias da planilha</span>'
                 '<span style="color:#c5936d;font-size:10px;margin-left:auto;">'
                 '* Invest. prop. por cliques &nbsp;|\u00a0 Receita = Comiss\u00e3o \u2212 Invest. &nbsp;|\u00a0'
                 ' RPC\u25b2 = Comiss\u00e3o/Cliques &nbsp;'
