@@ -1588,24 +1588,15 @@ def main():
         _ultimo_dia_pago = df_pago_raw["Data"].max().date() if not df_pago_raw.empty else None
         if _ultimo_dia_pago:
             _janela_activa = _ultimo_dia_pago - timedelta(days=2)  # últimos 3 dias
-            # Par (Sub_id1, Sub_id3) activo nos últimos 3 dias
+            # Par (Sub_id1, Sub_id3) activo = teve investimento > 0 nos últimos 3 dias
+            # directamente da planilha Pago que já tem Sub_id3
             _df_recente = df_pago_raw[
                 (df_pago_raw["Data"].dt.date >= _janela_activa) &
                 (df_pago_raw["Data"].dt.date <= _ultimo_dia_pago) &
                 (df_pago_raw["Investimento"] > 0)
             ]
-            # Sub_id3 na planilha Pago pode estar vazio — cruzar via df_raw (Shopee)
-            # Usar sub_id1 activo + sub_id3 que aparecem nesse sub_id1 no df_raw recente
-            _sid1_activos_recente = set(_df_recente["Sub_id1"].unique())
-            _df_shopee_recente = df_raw[
-                (df_raw["Data"].dt.date >= _janela_activa) &
-                (df_raw["Sub_id2"] == "pago")
-            ]
             _pares_activos = set(
-                zip(
-                    _df_shopee_recente[_df_shopee_recente["Sub_id1"].isin(_sid1_activos_recente)]["Sub_id1"],
-                    _df_shopee_recente[_df_shopee_recente["Sub_id1"].isin(_sid1_activos_recente)]["Sub_id3"]
-                )
+                zip(_df_recente["Sub_id1"], _df_recente["Sub_id3"])
             )
         else:
             _pares_activos = set()
