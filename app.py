@@ -840,25 +840,58 @@ def render_radar_shopee():
         met_canal = st.radio("Métrica", ["Vendas","Comissão (R$)","Ticket Médio (R$)","Cliques"],
                              horizontal=True, key="rs_canal_met", label_visibility="collapsed")
 
-        canais_todos = sorted([c for c in dh["Sub_id2"].unique() if c])
-        if met_canal == "Vendas":
-            cp = dh.groupby("Sub_id2")["ID_Pedido"].nunique().reset_index(name="Valor")
-        elif met_canal == "Comissão (R$)":
-            tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
-            cp  = tmp.groupby("Sub_id2")["Comissao_item"].sum().reset_index(name="Valor")
-        elif met_canal == "Ticket Médio (R$)":
-            tmp = dh.merge(dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(), on="ID_Pedido", how="left")
-            cp  = tmp.groupby("Sub_id2")["Comissao_item"].mean().reset_index(name="Valor")
+        # Toggle total / média — não faz sentido para Ticket Médio (já é uma média por definição)
+        if met_canal != "Ticket Médio (R$)":
+            _modo_canal = st.radio("", ["📊 Total acumulado", "📈 Média por semana"],
+                                   horizontal=True, key="rs_canal_modo", label_visibility="collapsed", index=0)
+            _canal_media = (_modo_canal == "📈 Média por semana")
         else:
-            cp = dh.groupby("Sub_id2")["ID_Pedido"].count().reset_index(name="Valor")
+            _canal_media = False
 
+        # Calcular número de semanas do período para a média
+        dh_sem = dh.copy()
+        if "Hora_Pedido" in dh_sem.columns:
+            dh_sem["_semana"] = dh_sem["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
+                                dh_sem["Hora_Pedido"].dt.year.astype(str)
+        else:
+            dh_sem["_semana"] = "s1"
+
+        canais_todos = sorted([c for c in dh["Sub_id2"].unique() if c])
+        dh_dd = dh_sem.drop_duplicates(subset=["ID_Pedido"])  # dedup para vendas/comissão
+        com_ped = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
+
+        if met_canal == "Vendas":
+            if _canal_media:
+                _sg = dh_dd.groupby(["Sub_id2","_semana"])["ID_Pedido"].nunique().reset_index(name="V")
+                cp  = _sg.groupby("Sub_id2")["V"].mean().reset_index(name="Valor")
+            else:
+                cp = dh_dd.groupby("Sub_id2")["ID_Pedido"].nunique().reset_index(name="Valor")
+        elif met_canal == "Comissão (R$)":
+            tmp = dh_dd.merge(com_ped, on="ID_Pedido", how="left")
+            if _canal_media:
+                _sg = tmp.groupby(["Sub_id2","_semana"])["Comissao_ped"].sum().reset_index(name="V")
+                cp  = _sg.groupby("Sub_id2")["V"].mean().reset_index(name="Valor")
+            else:
+                cp = tmp.groupby("Sub_id2")["Comissao_ped"].sum().reset_index(name="Valor")
+        elif met_canal == "Ticket Médio (R$)":
+            tmp = dh_dd.merge(com_ped, on="ID_Pedido", how="left")
+            cp  = tmp.groupby("Sub_id2")["Comissao_ped"].mean().reset_index(name="Valor")
+        else:  # Cliques — usa dh sem dedup
+            if _canal_media:
+                _sg = dh_sem.groupby(["Sub_id2","_semana"])["ID_Pedido"].count().reset_index(name="V")
+                cp  = _sg.groupby("Sub_id2")["V"].mean().reset_index(name="Valor")
+            else:
+                cp = dh_sem.groupby("Sub_id2")["ID_Pedido"].count().reset_index(name="Valor")
+
+        _lbl_modo = " (média/sem)" if _canal_media else ""
         cp = cp[cp["Sub_id2"] != ""].sort_values("Valor", ascending=True)
         cor_cp = [COR_CANAL.get(c, COR) for c in cp["Sub_id2"]]
+        _is_brl = met_canal in ["Comissão (R$)","Ticket Médio (R$)"]
         fig_cp = go.Figure(go.Bar(
             x=cp["Valor"], y=cp["Sub_id2"], orientation="h", marker_color=cor_cp,
-            text=cp["Valor"].apply(lambda v: f"{v:.0f}" if met_canal in ["Vendas","Cliques"] else fmt_brl(v)),
+            text=cp["Valor"].apply(lambda v: fmt_brl(v) if _is_brl else f"{v:.1f}" if _canal_media else f"{v:.0f}"),
             textposition="outside", textfont=dict(color="#c5936d", size=11)))
-        fig_cp.update_layout(title=f"{met_canal} por Canal", height=max(200, len(cp)*50),
+        fig_cp.update_layout(title=f"{met_canal}{_lbl_modo} por Canal", height=max(200, len(cp)*50),
             margin=dict(t=36,b=0,l=0,r=70), showlegend=False, **THEME_BASE, xaxis=AXIS, yaxis=AXIS)
         st.plotly_chart(fig_cp, use_container_width=True)
 
