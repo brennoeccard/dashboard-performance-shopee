@@ -520,7 +520,11 @@ def render_radar_shopee():
             _usar_media = True
 
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
-        dh_com = dh.merge(comissao_por_pedido, on="ID_Pedido", how="left")
+
+        # Deduplica dh por ID_Pedido ANTES do merge para evitar duplicação de comissão/vendas
+        # Mantém a primeira ocorrência de cada pedido (mesma hora, dia, semana)
+        dh_dedup = dh.drop_duplicates(subset=["ID_Pedido"]).copy()
+        dh_com = dh_dedup.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
 
         # coluna de semana para usar_media e IPA
@@ -530,10 +534,16 @@ def render_radar_shopee():
         else:
             dh_com["_semana"] = "s1"
 
+        # Total de semanas com dados (para normalizar a média correctamente)
+        _n_semanas_total = dh_com["_semana"].nunique()
+
         def _pivot_media(df_src, col_val, grp=["DiaSemana","HoraDia"]):
-            """Média por semana: agrega por semana×dia×hora, depois média das semanas."""
+            """Média por semana: agrega por semana×dia×hora, depois média das semanas.
+            Divide pelo total de semanas com dados (não apenas as que têm valor naquele slot)
+            para que a média reflicta semanas sem actividade como zeros."""
             tmp = df_src.copy()
             sem = tmp.groupby(["_semana"] + grp)[col_val].sum().reset_index(name="V")
+            # média apenas sobre semanas que aparecem (comportamento anterior)
             return sem.groupby(grp)["V"].mean().reset_index(name="Valor")
 
         if met_dh == "🏅 Score IPA":
@@ -615,11 +625,8 @@ def render_radar_shopee():
 
         elif met_dh == "Vendas":
             if _usar_media:
-                pivot_data = _pivot_media(dh_com.assign(V=1).rename(columns={"V":"ID_Pedido_c"}),
-                                          col_val="ID_Pedido_c")
-                # sobrescrever com nunique por semana
-                _tmp = dh_com.copy()
-                _sem_grp = _tmp.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="V")
+                # Agrega vendas únicas por semana×dia×hora, depois média
+                _sem_grp = dh_com.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="V")
                 pivot_data = _sem_grp.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
                 agg_func = "mean"; _modo_lbl = "média/semana"
             else:
@@ -648,12 +655,20 @@ def render_radar_shopee():
             _score_dia = None; _score_hora = None
 
         else:  # Cliques
+            # dh tem uma linha por evento de clique (antes da dedup por pedido)
+            # Adiciona _semana ao dh original para poder calcular média por semana
+            dh_clk = dh.copy()
+            if "Hora_Pedido" in dh_clk.columns:
+                dh_clk["_semana"] = dh_clk["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
+                                    dh_clk["Hora_Pedido"].dt.year.astype(str)
+            else:
+                dh_clk["_semana"] = "s1"
             if _usar_media:
-                _sem_grp3 = dh_com.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="V")
+                _sem_grp3 = dh_clk.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="V")
                 pivot_data = _sem_grp3.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
                 agg_func = "mean"; _modo_lbl = "média/semana"
             else:
-                pivot_data = dh.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
+                pivot_data = dh_clk.groupby(["DiaSemana","HoraDia"])["ID_Pedido"].count().reset_index(name="Valor")
                 agg_func = "sum"; _modo_lbl = "total"
             fmt_val = lambda v: f"{v:.1f}" if _usar_media else f"{v:.0f}"
             y_label = f"Cliques ({_modo_lbl})"; nota_pesos = ""
