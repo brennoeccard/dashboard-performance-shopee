@@ -470,7 +470,54 @@ def render_radar_shopee():
                     unsafe_allow_html=True)
         return
 
+    # ── Filtro de datas ─────────────────────────────────────────────────
+    from datetime import date, timedelta
+
+    # Determinar range disponível nos dados
+    if not dh.empty and "Hora_Pedido" in dh.columns:
+        _datas_validas = dh["Hora_Pedido"].dropna()
+        _data_min_dh = _datas_validas.min().date() if not _datas_validas.empty else date(2024, 1, 1)
+        _data_max_dh = _datas_validas.max().date() if not _datas_validas.empty else date.today()
+    else:
+        _data_min_dh = date(2024, 1, 1)
+        _data_max_dh = date.today()
+
+    ontem_radar = date.today() - timedelta(days=1)
+    _data_max_dh = min(_data_max_dh, ontem_radar)
+
+    if "rs_preset" not in st.session_state: st.session_state.rs_preset = "all"
+
     with st.expander("🎛️ Filtros", expanded=True):
+        # — Presets de data —
+        st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:6px;">📅 Período</div>', unsafe_allow_html=True)
+        _rp1, _rp2, _rp3, _rp4, _rp5 = st.columns(5)
+        with _rp1:
+            if st.button("7 dias",  use_container_width=True, key="rsp7"):  st.session_state.rs_preset="7d";  st.rerun()
+        with _rp2:
+            if st.button("30 dias", use_container_width=True, key="rsp30"): st.session_state.rs_preset="30d"; st.rerun()
+        with _rp3:
+            if st.button("90 dias", use_container_width=True, key="rsp90"): st.session_state.rs_preset="90d"; st.rerun()
+        with _rp4:
+            if st.button("Este ano", use_container_width=True, key="rspano"): st.session_state.rs_preset="ano"; st.rerun()
+        with _rp5:
+            if st.button("Tudo",    use_container_width=True, key="rsptudo"): st.session_state.rs_preset="all"; st.rerun()
+
+        _rsp = st.session_state.rs_preset
+        if   _rsp == "7d":  _d_ini_def = max(_data_max_dh - timedelta(days=6),  _data_min_dh)
+        elif _rsp == "30d": _d_ini_def = max(_data_max_dh - timedelta(days=29), _data_min_dh)
+        elif _rsp == "90d": _d_ini_def = max(_data_max_dh - timedelta(days=89), _data_min_dh)
+        elif _rsp == "ano": _d_ini_def = max(date(_data_max_dh.year, 1, 1),     _data_min_dh)
+        else:               _d_ini_def = _data_min_dh
+
+        _rdatas = st.date_input("", value=(_d_ini_def, _data_max_dh),
+                                min_value=_data_min_dh, max_value=_data_max_dh,
+                                label_visibility="collapsed", key="rs_datas")
+        rs_d_ini, rs_d_fim = (_rdatas if isinstance(_rdatas, tuple) and len(_rdatas)==2
+                              else (_d_ini_def, _data_max_dh))
+
+        st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
+        # — Filtros de canal e status —
         canais_disp   = sorted([x for x in dh["Sub_id2"].unique() if x]) if not dh.empty else []
         status_disp   = sorted([x for x in dh["Status"].unique()  if x]) if not dh.empty else []
         fc1, fc2 = st.columns(2)
@@ -481,9 +528,26 @@ def render_radar_shopee():
             st.markdown('<div style="color:#bd6d34;font-size:12px;font-weight:700;margin-bottom:4px;">Status do Pedido</div>', unsafe_allow_html=True)
             status_sel = st.multiselect("", status_disp, default=[], placeholder="Todos", label_visibility="collapsed", key="rs_status")
 
+    # — Aplicar filtro de datas —
     dh = dh.copy(); dc = dc.copy()
+    if "Hora_Pedido" in dh.columns:
+        dh = dh[dh["Hora_Pedido"].dt.date.between(rs_d_ini, rs_d_fim)]
+    if "ID_Pedido" in dc.columns:
+        ids_periodo = set(dh["ID_Pedido"].dropna().unique())
+        dc = dc[dc["ID_Pedido"].isin(ids_periodo)]
+
+    # — Aplicar filtros de canal e status —
     if canais_sel: dh = dh[dh["Sub_id2"].isin(canais_sel)]; dc = dc[dc["Sub_id2"].isin(canais_sel)]
     if status_sel: dh = dh[dh["Status"].isin(status_sel)];  dc = dc[dc["Status"].isin(status_sel)]
+
+    # — Info do período activo —
+    _n_semanas_periodo = max(1, round((rs_d_fim - rs_d_ini).days / 7))
+    st.markdown(
+        f'<div style="color:#c5936d;font-size:11px;margin-bottom:8px;">'
+        f'📅 {rs_d_ini.strftime("%d/%m/%Y")} → {rs_d_fim.strftime("%d/%m/%Y")} '
+        f'· {(rs_d_fim - rs_d_ini).days + 1} dias '
+        f'· ~{_n_semanas_periodo} semanas</div>',
+        unsafe_allow_html=True)
 
     if dh.empty and dc.empty:
         st.warning("Sem dados para os filtros seleccionados."); return
@@ -521,8 +585,7 @@ def render_radar_shopee():
 
         comissao_por_pedido = dc.groupby("ID_Pedido")["Comissao_item"].sum().reset_index(name="Comissao_ped")
 
-        # Deduplica dh por ID_Pedido ANTES do merge para evitar duplicação de comissão/vendas
-        # Mantém a primeira ocorrência de cada pedido (mesma hora, dia, semana)
+        # Deduplica dh por ID_Pedido ANTES do merge — evita multiplicar comissão
         dh_dedup = dh.drop_duplicates(subset=["ID_Pedido"]).copy()
         dh_com = dh_dedup.merge(comissao_por_pedido, on="ID_Pedido", how="left")
         dh_com["Comissao_ped"] = dh_com["Comissao_ped"].fillna(0)
@@ -534,16 +597,10 @@ def render_radar_shopee():
         else:
             dh_com["_semana"] = "s1"
 
-        # Total de semanas com dados (para normalizar a média correctamente)
-        _n_semanas_total = dh_com["_semana"].nunique()
-
         def _pivot_media(df_src, col_val, grp=["DiaSemana","HoraDia"]):
-            """Média por semana: agrega por semana×dia×hora, depois média das semanas.
-            Divide pelo total de semanas com dados (não apenas as que têm valor naquele slot)
-            para que a média reflicta semanas sem actividade como zeros."""
+            """Média por semana: agrega por semana×dia×hora, depois média das semanas."""
             tmp = df_src.copy()
             sem = tmp.groupby(["_semana"] + grp)[col_val].sum().reset_index(name="V")
-            # média apenas sobre semanas que aparecem (comportamento anterior)
             return sem.groupby(grp)["V"].mean().reset_index(name="Valor")
 
         if met_dh == "🏅 Score IPA":
@@ -625,7 +682,6 @@ def render_radar_shopee():
 
         elif met_dh == "Vendas":
             if _usar_media:
-                # Agrega vendas únicas por semana×dia×hora, depois média
                 _sem_grp = dh_com.groupby(["_semana","DiaSemana","HoraDia"])["ID_Pedido"].nunique().reset_index(name="V")
                 pivot_data = _sem_grp.groupby(["DiaSemana","HoraDia"])["V"].mean().reset_index(name="Valor")
                 agg_func = "mean"; _modo_lbl = "média/semana"
@@ -655,8 +711,7 @@ def render_radar_shopee():
             _score_dia = None; _score_hora = None
 
         else:  # Cliques
-            # dh tem uma linha por evento de clique (antes da dedup por pedido)
-            # Adiciona _semana ao dh original para poder calcular média por semana
+            # dh original (não dedup) — cada linha é um evento/clique
             dh_clk = dh.copy()
             if "Hora_Pedido" in dh_clk.columns:
                 dh_clk["_semana"] = dh_clk["Hora_Pedido"].dt.isocalendar().week.astype(str) + "_" + \
@@ -687,9 +742,14 @@ def render_radar_shopee():
                 best_hora_agg = _score_hora
                 sub_label     = "score"
             else:
-                best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].agg(agg_func).reindex(ORDEM_DIAS).dropna()
-                best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].agg(agg_func)
-                sub_label     = "média" if agg_func == "mean" else "total"
+                # Para métricas de volume (Vendas, Comissão, Cliques):
+                # pivot_data tem uma linha por (DiaSemana, HoraDia) com o valor médio/semana.
+                # O total diário médio/semana = SOMA das médias horárias desse dia.
+                # O total horário médio/semana = SOMA das médias de cada dia para essa hora.
+                # Usar mean aqui daria "média das 24 horas" (~1/24 do dia) — ERRADO.
+                best_dia_agg  = pivot_data.groupby("DiaSemana")["Valor"].sum().reindex(ORDEM_DIAS).dropna()
+                best_hora_agg = pivot_data.groupby("HoraDia")["Valor"].sum()
+                sub_label     = "média/semana" if agg_func == "mean" else "total"
 
             top3_mom   = pivot_data.nlargest(3, "Valor").reset_index(drop=True)
             top3_dias  = best_dia_agg.nlargest(3)
